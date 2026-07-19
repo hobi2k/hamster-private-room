@@ -1,0 +1,276 @@
+/* ==========================================================================
+   TopToon Design System — Colors & Type
+   Source of truth: html/css/theme.css
+   Default theme: dark
+   Fonts: Pretendard (primary) + Roboto (numerics/latin accents)
+   ========================================================================== */
+
+/* ---- Font loading (web) ---- */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.6/dist/web/static/pretendard.css");
+@import url("https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap");
+
+/* ==========================================================================
+   LIGHT (the codebase default root, but app generally loads dark)
+   ========================================================================== */
+:root,
+[data-bs-theme="light"] {
+  /* Core surfaces */
+  --color-light: #ffffff;
+  --color-dark: #000000;
+  --color-bg-nav-dark: #151618;       /* top nav bar on main */
+  --color-bg-footer: #f7f7f7;
+  --color-bg-box: #ffffff;
+  --color-bg-episode-box: #f5f5f5;
+  --color-bg-input: #ffffff;
+  --color-bg-button: #EBEBEB;
+  --color-bg-episode-layer: #ffffff;
+  --color-bg-lineup: #edf4ff;
+  --color-bg-main-header: #2B2B2B;
+  --color-bg-header: #f5f5f5;
+
+  /* Brand / semantic */
+  --color-red-primary: #E63740;        /* primary brand red */
+  --color-promo-free: #F05255;          /* free promo / 19+ accent */
+  --color-new-release: #33dfce;         /* mint "new" highlight */
+
+  /* Borders / hover */
+  --color-border-default: #ddd;
+  --color-btn-hover: #eee;
+  --border-line-default: 1px solid #eee;
+  --border-line-tapmenu: 6px solid #F7F7F7;
+  --border-radius-sm: 3px;
+  --border-radius-md: 5px;
+  --border-radius-lg: 50px;
+
+  /* Text */
+  --color-text-title: #000;
+  --color-text-subtitle: #333;
+  --color-text-menu: #666;
+  --color-text-describe: #888;
+  --color-common-light: #fff;           /* "static white" regardless of theme */
+  --color-common-dark: #000;            /* "static black" regardless of theme */
+
+  /* Payment / charge */
+  --color-coin-ten: #5C1E07;
+  --color-btn-charge: #bbb;
+  --color-bg-payreg-area-box: #fff;
+  --color-bg-gauge-default: #eee;
+  --color-bg-autoCharge: #FFF9D6;
+  --color-bg-normalCharge: #f6f6f6;
+  --color-bg-payItem-active: #fff2f2;
+  --color-text-price-animation: #e43643;
+
+  /* Episode list semantic backgrounds */
+  --color-bg-waitfree: #fff5ec;          /* 기다리면 무료 */
+  --color-icon-bg-waitfree: #f58a36;
+  --color-bg-freepass: #e8f2ff;          /* 무료이용권 */
+  --color-bg-allbuy: #fffbd4;            /* 모두 구매 */
+  --color-bg-rental: #fffbd4;            /* 대여 */
+  --color-bg-oneplus: #fff1e9;           /* 1+1 */
+  --color-bg-controls: #fff;
+  --color-bg-animode-block: #cde9fd;
+
+  /* FAQ / overlay */
+  --color-category-badge: #888888;
+  --color-bg-faq-tap: #fff;
+  --color-bg-tag: #f3f3f3;
+  --color-bg-dark: rgba(255, 255, 255, 0.7);
+  --color-bg-speechbubble: rgba(255, 255, 255, 1);
+
+  /* Sponsor */
+  --color-text-sponsor-label: #333333;
+  --color-text-sponsor-desc: #646464;
+  --color-bg-sponsor-input: #FAFAFA;
+  --color-bg-sponsor-placeholder: #acacac;
+  --color-bg-sponsor-disabled: #ccc;
+
+  /* === Typography === */
+  --font-family-default: "Pretendard", "Pretendard Variable", "Noto Sans KR",
+      system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-family-numeric: "Roboto", "Pretendard", sans-serif;
+
+  --font-size-11px: 11px;
+  --font-size-12px: 12px;
+  --font-size-xxs: 0.65rem;     /* ≈10.4px */
+  --font-size-xs:  0.75rem;     /* 12px    */
+  --font-size-sm:  0.875rem;    /* 14px    */
+  --font-size-mid: 0.9375rem;   /* 15px — top-menu */
+  --font-size-md:  1rem;        /* 16px base */
+  --font-size-lg:  1.125rem;    /* 18px — section titles */
+  --font-size-xl:  1.25rem;     /* 20px */
+  --font-size-xxl: 1.5rem;      /* 24px */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --font-letter-spacing: -0.01rem;   /* tight Korean default */
+  --font-number-spacing: -0.02rem;   /* tighter for digits */
+  --line-height-default: 1.2;
+  --line-height-loose: 1.75;
+
+  /* Motion */
+  --button-transition: all 0.2s ease-in-out;
+  --margin-auto: 0 auto;
+}
+
+/* ==========================================================================
+   DARK (app default)
+   ========================================================================== */
+[data-bs-theme="dark"] {
+  --color-light: #1E1F21;               /* note: "light" = bg surface */
+  --color-dark: #ffffff;                /* "dark" = fg text */
+  --color-bg-nav-dark: #2a2b2d;
+  --color-bg-footer: #2e2e2e;
+  --color-bg-box: #2e2e2e;
+  --color-bg-episode-box: #2e2e2e;
+  --color-bg-input: #1a1a1b;
+  --color-bg-button: #525252;
+  --color-bg-episode-layer: #2a2b2d;
+  --color-bg-lineup: #2c3735;
+  --color-bg-main-header: #2B2B2B;
+  --color-bg-header: #2B2B2B;
+
+  --color-red-primary: #E63740;
+  --color-promo-free: #F05255;
+  --color-new-release: #33dfce;
+
+  --color-border-default: #3d3d3d;
+  --color-btn-hover: #3b3b3b;
+  --border-line-default: 1px solid rgba(238, 238, 238, 0.2);
+  --border-line-tapmenu: 6px solid #282829;
+
+  --color-text-title: #fff;
+  --color-text-subtitle: #ccc;
+  --color-text-menu: #bbb;
+  --color-text-describe: #aaa;
+  --color-common-light: #fff;
+  --color-common-dark: #000;
+
+  /* Payment */
+  --color-coin-ten: #FA6F76;
+  --color-btn-charge: #404040;
+  --color-bg-payreg-area-box: #262626;
+  --color-bg-gauge-default: #525252;
+  --color-bg-autoCharge: #A1620766;
+  --color-bg-normalCharge: #3D3D3D;
+  --color-bg-payItem-active: rgba(255, 9, 9, 0.30);
+  --color-text-price-animation: #FDE047;
+
+  /* Episode list semantic (darker, richer) */
+  --color-bg-waitfree: #713F12;
+  --color-icon-bg-waitfree: #f58a36;
+  --color-bg-freepass: #203653;
+  --color-bg-allbuy: #574916;
+  --color-bg-rental: #1f3d31;
+  --color-bg-oneplus: #500724;
+  --color-bg-controls: #3c3c3c;
+  --color-bg-animode-block: #213545;
+
+  --color-category-badge: #7f7f7f;
+  --color-bg-faq-tap: #2e2e2e;
+  --color-bg-tag: #2e2e2e;
+  --color-bg-dark: rgba(0, 0, 0, 0.7);
+  --color-bg-speechbubble: rgba(0, 0, 0, 1);
+
+  --color-text-sponsor-label: #D1D1D1;
+  --color-text-sponsor-desc: #8B8B8B;
+  --color-bg-sponsor-input: #333333;
+  --color-bg-sponsor-placeholder: #555;
+  --color-bg-sponsor-disabled: #333;
+}
+
+/* ==========================================================================
+   SEMANTIC ELEMENT DEFAULTS (opinionated — style these with the vars above)
+   ========================================================================== */
+html { font-size: 20px; -webkit-font-smoothing: subpixel-antialiased; }
+@media (max-width: 1023px) { html { font-size: 18px; } }
+@media (max-width: 767px)  { html { font-size: 16px; } }
+
+body {
+  font-family: var(--font-family-default);
+  background-color: var(--color-light);
+  color: var(--color-text-describe);
+  line-height: var(--line-height-default);
+  letter-spacing: var(--font-letter-spacing);
+  -webkit-font-smoothing: subpixel-antialiased;
+}
+
+/* Page title (hero area) */
+.ds-h1, h1.ds {
+  font-family: var(--font-family-default);
+  font-size: 2rem;            /* ≈32px @ 16px */
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-title);
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing);
+}
+/* Banner sub-text — as seen on main banner */
+.ds-hero-sub {
+  font-size: 22px;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.2;
+  color: var(--color-common-light);
+  text-shadow: rgba(0, 0, 0, .3) 1px 1px 0px;
+}
+/* Section title (실시간 랭킹 etc.) */
+.ds-h2, h2.ds {
+  font-size: var(--font-size-lg);     /* 18px */
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-title);
+  line-height: var(--line-height-default);
+}
+/* Sub-section / card title */
+.ds-h3, h3.ds {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-title);
+}
+/* Body copy */
+.ds-body, p.ds {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-describe);
+  line-height: var(--line-height-loose);
+}
+/* Work-card title (comic title) */
+.ds-title-card {
+  font-size: var(--font-size-sm);     /* 14px */
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-title);
+  letter-spacing: var(--font-letter-spacing);
+  line-height: var(--line-height-default);
+}
+/* Meta / views / episode */
+.ds-meta {
+  font-size: 13px;
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-describe);
+  letter-spacing: var(--font-letter-spacing);
+}
+/* Caption / footer fine print */
+.ds-caption {
+  font-size: var(--font-size-xxs);
+  color: var(--color-text-describe);
+  line-height: var(--line-height-loose);
+}
+/* Numeric (coin counts, prices, timers) */
+.ds-num {
+  font-family: var(--font-family-numeric);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--font-number-spacing);
+}
+
+/* Pills / badge text */
+.ds-pill {
+  font-size: var(--font-size-12px);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-common-light);
+  background: var(--color-red-primary);
+  border-radius: var(--border-radius-lg);
+  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}

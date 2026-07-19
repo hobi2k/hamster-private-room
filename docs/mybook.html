@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>프로페셔널 북 메이커 (Pro Edition)</title>
+    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@1.0/Chosunilbo_myungjo.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_twelve@1.0/RIDIBatang.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        /* [UI 테마 및 레이아웃 개선] */
+        :root {
+            /* 사용자가 조절할 수 있는 캔버스 전역 변수들 */
+            --page-width: 400px;
+            --pad-x: 40px;
+            --pad-y: 40px;
+            --line-break: keep-all; /* 단어 단위 */
+            --para-space: 0px;
+            --scale-x: 1; /* 장평 */
+        }
+        body { font-family: 'Pretendard', sans-serif; background-color: #2c2f33; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; color: #333; }
+
+        /* 왼쪽 사이드바 (스크롤 및 아코디언 적용) */
+        .sidebar { width: 360px; background: #ffffff; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.2); z-index: 10; }
+        .sidebar-header { padding: 20px; background: #f8f9fa; border-bottom: 1px solid #eee; text-align: center; }
+        .sidebar-header h2 { margin: 0; font-size: 18px; color: #222; }
+        .sidebar-content { flex-grow: 1; overflow-y: auto; padding: 15px; }
+
+        /* 아코디언 메뉴 스타일 */
+        details { background: #f8f9fa; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e9ecef; }
+        summary { font-weight: bold; padding: 12px 15px; cursor: pointer; list-style: none; outline: none; }
+        summary::-webkit-details-marker { display: none; }
+        .control-group { padding: 15px; border-top: 1px solid #e9ecef; background: #fff; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
+
+        /* 버튼 및 폼 요소 디자인 */
+        label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; margin-top: 10px; }
+        .row { display: flex; gap: 5px; align-items: center; }
+        button, select, input[type="text"], input[type="color"] { padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; width: 100%; box-sizing: border-box; }
+        button:hover { background: #e9ecef; }
+        .btn-icon { width: auto; flex-grow: 1; font-weight: bold; }
+        .btn-primary { background: #007bff; color: white; border: none; margin-top: 15px; }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-export { background: #e83e8c; color: white; border: none; }
+
+        /* 슬라이더(Range) 디자인 */
+        .slider-wrap { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+        input[type="range"] { flex-grow: 1; }
+        .val-badge { font-size: 11px; background: #eee; padding: 2px 6px; border-radius: 10px; min-width: 35px; text-align: center; }
+
+        /* 색상 팔레트 (보조색) */
+        .color-palette { display: flex; gap: 5px; margin-bottom: 10px; }
+        .color-chip { width: 24px; height: 24px; border-radius: 50%; border: 1px solid #ddd; cursor: pointer; }
+
+        /* 오른쪽 캔버스 작업 공간 (2장씩 나란히 배치되도록 Flex Wrap 적용) */
+        .workspace {
+            flex-grow: 1; padding: 40px; overflow-y: auto;
+            display: flex; flex-direction: row; flex-wrap: wrap; /* 핵심: 화면이 넓으면 2장 나란히 배치 */
+            justify-content: center; align-content: flex-start; gap: 30px;
+        }
+
+        /* 책 페이지 공통 속성 */
+        .page {
+            background-color: #ffffff;
+            width: var(--page-width);
+            min-height: calc(var(--page-width) * 1.4); /* 기본 비율 조정 */
+            padding: var(--pad-y) var(--pad-x);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            position: relative;
+            outline: none;
+            word-break: var(--line-break);
+
+            /* 타이포그래피 기본값 */
+            font-size: 16px; line-height: 1.6; letter-spacing: 0;
+
+            /* 배경 이미지 처리 속성들 */
+            background-size: cover;
+            background-position: center;
+            background-blend-mode: normal; /* 오버레이 처리용 */
+            transition: all 0.3s ease;
+        }
+
+        /* 장평(글자 너비 비례)과 문단 간격을 적용하는 내부 컨테이너 */
+        .page-content {
+            transform: scaleX(var(--scale-x));
+            transform-origin: left top;
+            width: calc(100% / var(--scale-x)); /* 장평 변경 시 너비 보정 */
+            min-height: 100%;
+            outline: none;
+        }
+
+        /* 문단(<p>나 <div>) 마다 간격 띄우기 */
+        .page-content div, .page-content p { margin-bottom: var(--para-space); }
+
+        .page.drag-over { border: 3px dashed #007bff; opacity: 0.9; }
+        .page-number { position: absolute; bottom: 15px; left: 0; width: 100%; text-align: center; font-size: 12px; color: #888; font-family: sans-serif; pointer-events: none;}
+
+        /* 5가지 구분선 스타일 클래스 */
+        hr.div-solid { border: 0; border-top: 1px solid #333; margin: 20px 0; }
+        hr.div-dashed { border: 0; border-top: 1px dashed #333; margin: 20px 0; }
+        hr.div-dotted { border: 0; border-top: 2px dotted #333; margin: 20px 0; }
+        hr.div-double { border: 0; border-top: 3px double #333; margin: 20px 0; }
+        hr.div-wave { border: 0; height: 10px; background: repeating-radial-gradient(circle at 0 0, transparent 0, #333 4px, transparent 5px); margin: 20px 0; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>📖 북 메이커 Pro</h2>
+        </div>
+
+        <div class="sidebar-content">
+
+            <details open>
+                <summary>📏 레이아웃 & 크기 조절</summary>
+                <div class="control-group">
+                    <label>페이지 너비 (비율 자동조정)</label>
+                    <div class="slider-wrap">
+                        <input type="range" id="pageWidth" min="300" max="800" value="400" oninput="StyleModule.updateLayout()">
+                        <span class="val-badge" id="valWidth">400px</span>
+                    </div>
+                    <label>가로 여백 (좌우)</label>
+                    <div class="slider-wrap">
+                        <input type="range" id="padX" min="10" max="100" value="40" oninput="StyleModule.updateLayout()">
+                        <span class="val-badge" id="valPadX">40px</span>
+                    </div>
+                    <label>세로 여백 (상하)</label>
+                    <div class="slider-wrap">
+                        <input type="range" id="padY" min="10" max="150" value="40" oninput="StyleModule.updateLayout()">
+                        <span class="val-badge" id="valPadY">40px</span>
+                    </div>
+                </div>
+            </details>
+
+            <details>
+                <summary>🖼️ 배경 디자인 & 이미지 효과</summary>
+                <div class="control-group">
+                    <label>배경 유형 선택</label>
+                    <select id="bgType" onchange="StyleModule.applyBackground()">
+                        <option value="solid">단색 배경</option>
+                        <option value="gradient">그라데이션 (감성)</option>
+                    </select>
+                    <input type="color" id="bgColorBase" value="#ffffff" onchange="StyleModule.applyBackground()">
+
+                    <hr style="margin: 15px 0; border:0; border-top:1px solid #eee;">
+                    <p style="font-size:11px; color:#888; margin:0;">※ 이미지는 우측 페이지에 <b>직접 드래그</b>하세요.</p>
+
+                    <label>이미지 채우기 방식 (크롭 대용)</label>
+                    <select id="bgSize" onchange="StyleModule.applyImageEffects()">
+                        <option value="cover">꽉 채우기 (자동 크롭)</option>
+                        <option value="contain">원본 비율 맞추기</option>
+                        <option value="100% 100%">강제로 맞추기</option>
+                    </select>
+
+                    <label>이미지 위치 (포커스)</label>
+                    <select id="bgPosition" onchange="StyleModule.applyImageEffects()">
+                        <option value="center">중앙 정렬</option>
+                        <option value="top">상단 정렬</option>
+                        <option value="bottom">하단 정렬</option>
+                    </select>
+
+                    <label>이미지 상세 효과</label>
+                    <div class="row">
+                        <input type="checkbox" id="imgBw" onchange="StyleModule.applyImageEffects()"> <span style="font-size:12px;">흑백 모드</span>
+                    </div>
+                    <div class="slider-wrap" style="margin-top:5px;">
+                        <span style="font-size:12px;">투명도</span>
+                        <input type="range" id="imgOpacity" min="0" max="100" value="100" oninput="StyleModule.applyImageEffects()">
+                    </div>
+                    <div class="slider-wrap">
+                        <span style="font-size:12px;">다크 오버레이</span>
+                        <input type="range" id="imgOverlay" min="0" max="90" value="0" oninput="StyleModule.applyImageEffects()">
+                    </div>
+                </div>
+            </details>
+
+            <details>
+                <summary>✍️ 글꼴 & 문단 설정</summary>
+                <div class="control-group">
+                    <label>기본 제공 서체</label>
+                    <select id="fontSelect" onchange="StyleModule.updateText()">
+                        <option value="'Pretendard', sans-serif">프리텐다드</option>
+                        <option value="'Chosunilbo_myungjo', serif">조선일보명조</option>
+                        <option value="'RIDIBatang', serif">리디바탕</option>
+                    </select>
+                    <label>내 PC 설치 글꼴 (직접 입력)</label>
+                    <input type="text" id="customFont" placeholder="예: 맑은 고딕, 궁서체" onkeyup="StyleModule.updateText()">
+
+                    <label>줄바꿈 기준</label>
+                    <select id="wordBreak" onchange="StyleModule.updateLayout()">
+                        <option value="keep-all">단어 단위로 끊기 (추천)</option>
+                        <option value="break-all">글자 단위로 끊기</option>
+                    </select>
+
+                    <label>글자 간격 상세</label>
+                    <div class="slider-wrap">
+                        <span style="font-size:12px; width:45px;">크기</span>
+                        <input type="range" id="fontSize" min="10" max="40" value="15" oninput="StyleModule.updateText()">
+                        <span class="val-badge" id="valFont">15px</span>
+                    </div>
+                    <div class="slider-wrap">
+                        <span style="font-size:12px; width:45px;">행간</span>
+                        <input type="range" id="lineHeight" min="100" max="250" value="160" oninput="StyleModule.updateText()">
+                        <span class="val-badge" id="valLine">160%</span>
+                    </div>
+                    <div class="slider-wrap">
+                        <span style="font-size:12px; width:45px;">자간</span>
+                        <input type="range" id="letterSpacing" min="-10" max="20" value="0" oninput="StyleModule.updateText()">
+                        <span class="val-badge" id="valLetter">0%</span>
+                    </div>
+                    <div class="slider-wrap">
+                        <span style="font-size:12px; width:45px;">문단간격</span>
+                        <input type="range" id="paraSpace" min="0" max="50" value="0" oninput="StyleModule.updateLayout()">
+                        <span class="val-badge" id="valPara">0px</span>
+                    </div>
+                    <div class="slider-wrap">
+                        <span style="font-size:12px; width:45px;">장평</span>
+                        <input type="range" id="scaleX" min="80" max="120" value="100" oninput="StyleModule.updateLayout()">
+                        <span class="val-badge" id="valScale">100%</span>
+                    </div>
+                </div>
+            </details>
+
+            <details>
+                <summary>✨ 특정 문구 꾸미기 (드래그)</summary>
+                <div class="control-group">
+                    <label>자주 쓰는 보조색 (클릭 시 형광펜 적용)</label>
+                    <div class="color-palette">
+                        <div class="color-chip" style="background:#ffea00;" onclick="TextModule.format('hiliteColor', '#ffea00')"></div>
+                        <div class="color-chip" style="background:#00ffaa;" onclick="TextModule.format('hiliteColor', '#00ffaa')"></div>
+                        <div class="color-chip" style="background:#ff99c2;" onclick="TextModule.format('hiliteColor', '#ff99c2')"></div>
+                        <div class="color-chip" style="background:#cccccc;" onclick="TextModule.format('hiliteColor', '#cccccc')"></div>
+                    </div>
+
+                    <div class="row" style="margin-bottom:10px;">
+                        글자색: <input type="color" onchange="TextModule.format('foreColor', this.value)" style="padding:0; width:30px; height:30px;">
+                        배경색: <input type="color" value="#ffff00" onchange="TextModule.format('hiliteColor', this.value)" style="padding:0; width:30px; height:30px;">
+                    </div>
+
+                    <div class="row">
+                        <button class="btn-icon" onclick="TextModule.format('bold')"><b>B</b></button>
+                        <button class="btn-icon" onclick="TextModule.format('italic')"><i>I</i></button>
+                        <button class="btn-icon" onclick="TextModule.format('strikeThrough')"><del>S</del></button>
+                        <button class="btn-icon" onclick="TextModule.format('justifyLeft')">좌</button>
+                        <button class="btn-icon" onclick="TextModule.format('justifyCenter')">중</button>
+                        <button class="btn-icon" onclick="TextModule.format('justifyRight')">우</button>
+                    </div>
+
+                    <label style="margin-top:15px;">구분선 삽입 (커서 위치에 추가)</label>
+                    <select id="dividerSelect">
+                        <option value="solid">━━ 실선 ━━</option>
+                        <option value="dashed">-- 점선(대) --</option>
+                        <option value="dotted">·· 점선(소) ··</option>
+                        <option value="double">══ 이중선 ══</option>
+                        <option value="wave">≈≈ 물결선 ≈≈</option>
+                    </select>
+                    <button onclick="TextModule.insertDivider()">구분선 넣기</button>
+                </div>
+            </details>
+
+            <button class="btn-primary" onclick="PageModule.add()">+ 새 페이지 추가하기</button>
+            <button class="btn-primary btn-export" onclick="ExportModule.saveSinglePages()">📄 낱장으로 모두 저장</button>
+            <button class="btn-primary btn-export" style="background:#28a745; margin-top:5px;" onclick="ExportModule.saveSpread()">📖 책처럼 2장씩 양면 저장</button>
+
+        </div>
+    </div>
+
+    <div class="workspace" id="workspace"></div>
+
+    <script>
+        // 전역 설정: DOM Root를 잡아 CSS 변수를 컨트롤합니다.
+        const root = document.documentElement;
+
+        // [모듈 1] 페이지 관리
+        const PageModule = {
+            count: -1, // 0번부터 시작 (표지)
+            add: function() {
+                this.count++;
+                const isCover = this.count === 0;
+
+                const page = document.createElement('div');
+                page.className = 'page';
+                page.id = 'page-' + this.count;
+
+                // 장평 및 문단 컨트롤을 위한 내부 컨텐츠 박스 생성
+                const contentBox = document.createElement('div');
+                contentBox.className = 'page-content';
+                contentBox.contentEditable = "true";
+                contentBox.innerHTML = isCover
+                    ? `<div><b>[표지]</b> 제목을 적어주세요.</div><div>이 페이지는 번호가 매겨지지 않습니다.</div>`
+                    : `<div>${this.count}번째 페이지입니다.</div>`;
+
+                // 표지가 아니면 하단에 페이지 번호 삽입
+                const pageNum = document.createElement('div');
+                pageNum.className = 'page-number';
+                pageNum.innerText = isCover ? '' : `- ${this.count} -`;
+
+                page.appendChild(contentBox);
+                page.appendChild(pageNum);
+                document.getElementById('workspace').appendChild(page);
+
+                ImageModule.attachDragEvent(page);
+                StyleModule.applyAll();
+            }
+        };
+
+        // [모듈 2] 스타일 (레이아웃, 텍스트, 이미지 제어)
+        const StyleModule = {
+            applyAll: function() { this.updateLayout(); this.updateText(); this.applyBackground(); this.applyImageEffects(); },
+
+            updateLayout: function() {
+                const w = document.getElementById('pageWidth').value;
+                const px = document.getElementById('padX').value;
+                const py = document.getElementById('padY').value;
+                const brk = document.getElementById('wordBreak').value;
+                const pSpace = document.getElementById('paraSpace').value;
+                const scaleX = document.getElementById('scaleX').value;
+
+                document.getElementById('valWidth').innerText = w + 'px';
+                document.getElementById('valPadX').innerText = px + 'px';
+                document.getElementById('valPadY').innerText = py + 'px';
+                document.getElementById('valPara').innerText = pSpace + 'px';
+                document.getElementById('valScale').innerText = scaleX + '%';
+
+                root.style.setProperty('--page-width', w + 'px');
+                root.style.setProperty('--pad-x', px + 'px');
+                root.style.setProperty('--pad-y', py + 'px');
+                root.style.setProperty('--line-break', brk);
+                root.style.setProperty('--para-space', pSpace + 'px');
+                root.style.setProperty('--scale-x', scaleX / 100);
+            },
+
+            updateText: function() {
+                const custom = document.getElementById('customFont').value;
+                const font = custom ? `'${custom}', sans-serif` : document.getElementById('fontSelect').value;
+                const size = document.getElementById('fontSize').value;
+                const lineH = document.getElementById('lineHeight').value;
+                const letterS = document.getElementById('letterSpacing').value;
+
+                document.getElementById('valFont').innerText = size + 'px';
+                document.getElementById('valLine').innerText = lineH + '%';
+                document.getElementById('valLetter').innerText = letterS + '%';
+
+                const pages = document.querySelectorAll('.page');
+                pages.forEach(p => {
+                    p.style.fontFamily = font;
+                    p.style.fontSize = size + 'px';
+                    p.style.lineHeight = lineH / 100;
+                    p.style.letterSpacing = (letterS / 100) + 'em';
+                });
+            },
+
+            applyBackground: function() {
+                const type = document.getElementById('bgType').value;
+                const color = document.getElementById('bgColorBase').value;
+                const pages = document.querySelectorAll('.page');
+
+                pages.forEach(p => {
+                    if(!p.style.backgroundImage || p.style.backgroundImage === 'none') {
+                        if(type === 'solid') p.style.background = color;
+                        else p.style.background = `linear-gradient(135deg, ${color}, #e9ecef)`;
+                    }
+                });
+            },
+
+            applyImageEffects: function() {
+                const size = document.getElementById('bgSize').value;
+                const pos = document.getElementById('bgPosition').value;
+                const bw = document.getElementById('imgBw').checked;
+                const op = document.getElementById('imgOpacity').value;
+                const overlay = document.getElementById('imgOverlay').value;
+
+                const pages = document.querySelectorAll('.page');
+                pages.forEach(p => {
+                    // 배경 사이즈 및 위치 (크롭 우회 효과)
+                    p.style.backgroundSize = size;
+                    p.style.backgroundPosition = pos;
+
+                    // 흑백 및 투명도는 CSS filter로 처리
+                    let filterStr = `opacity(${op}%)`;
+                    if(bw) filterStr += ` grayscale(100%)`;
+                    p.style.filter = filterStr;
+
+                    // 다크 오버레이는 blend-mode를 이용해 검은색을 덮어씌움
+                    if(p.style.backgroundImage && overlay > 0) {
+                        p.style.backgroundColor = `rgba(0,0,0, ${overlay / 100})`;
+                        p.style.backgroundBlendMode = 'overlay';
+                        p.style.color = 'white'; // 어두워지면 글자는 흰색으로
+                    } else {
+                        p.style.backgroundBlendMode = 'normal';
+                    }
+                });
+            }
+        };
+
+        // [모듈 3] 텍스트 및 에디터
+        const TextModule = {
+            format: function(command, value = null) {
+                document.execCommand(command, false, value);
+            },
+            insertDivider: function() {
+                const type = document.getElementById('dividerSelect').value;
+                // 구분선을 HTML 통째로 삽입합니다. contenteditable에서 허용되는 방식입니다.
+                const hrHtml = `<hr class="div-${type}" contenteditable="false"><div><br></div>`;
+                document.execCommand('insertHTML', false, hrHtml);
+            }
+        };
+
+        // [모듈 4] 이미지 드래그 관리
+        const ImageModule = {
+            attachDragEvent: function(page) {
+                page.addEventListener('dragover', (e) => { e.preventDefault(); page.classList.add('drag-over'); });
+                page.addEventListener('dragleave', () => { page.classList.remove('drag-over'); });
+                page.addEventListener('drop', (e) => {
+                    e.preventDefault(); page.classList.remove('drag-over');
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) {
+                        const reader = new FileReader();
+                        reader.onload = function(event) {
+                            page.style.backgroundImage = `url('${event.target.result}')`;
+                            StyleModule.applyImageEffects(); // 이미지 들어간 후 효과 즉시 반영
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }
+        };
+
+        // [모듈 5] 내보내기 (캡처)
+        const ExportModule = {
+            // 낱장(1페이지씩) 저장
+            saveSinglePages: async function() {
+                const pages = document.querySelectorAll('.page');
+                for(let i=0; i<pages.length; i++) {
+                    const canvas = await html2canvas(pages[i], { scale: 2 });
+                    const link = document.createElement('a');
+                    link.download = `낱장_페이지_${i}.png`;
+                    link.href = canvas.toDataURL("image/png");
+                    link.click();
+                    await new Promise(r => setTimeout(r, 400));
+                }
+            },
+
+            // 양면(2장씩) 스프레드 저장
+            saveSpread: async function() {
+                const pages = document.querySelectorAll('.page');
+                if(pages.length === 0) return;
+
+                // 2장씩 묶기 위해 임시로 DOM 구조를 변경했다가 캡처 후 원상복구합니다.
+                for(let i=0; i<pages.length; i+=2) {
+                    const p1 = pages[i];
+                    const p2 = pages[i+1]; // 홀수 페이지면 null
+
+                    // 두 페이지를 담을 임시 박스 생성
+                    const wrapper = document.createElement('div');
+                    wrapper.style.display = 'flex';
+                    wrapper.style.gap = '0'; // 진짜 책처럼 사이 간격 없앰
+                    wrapper.style.width = 'fit-content';
+
+                    // 워크스페이스에 임시 박스를 넣고 페이지들을 그 안으로 이사시킴
+                    p1.parentNode.insertBefore(wrapper, p1);
+                    wrapper.appendChild(p1);
+                    if(p2) wrapper.appendChild(p2);
+
+                    // 캡처 찰칵!
+                    const canvas = await html2canvas(wrapper, { scale: 2 });
+                    const link = document.createElement('a');
+                    link.download = `양면_스프레드_${i/2 + 1}.png`;
+                    link.href = canvas.toDataURL("image/png");
+                    link.click();
+
+                    // 캡처가 끝나면 다시 밖으로 꺼내놓고 임시 박스 파괴
+                    wrapper.parentNode.insertBefore(p1, wrapper);
+                    if(p2) wrapper.parentNode.insertBefore(p2, wrapper);
+                    wrapper.remove();
+
+                    await new Promise(r => setTimeout(r, 600));
+                }
+                alert("양면 저장 완료!");
+            }
+        };
+
+        // 초기 시작 시 표지(0)와 1페이지 자동 생성
+        window.onload = function() {
+            PageModule.add(); // 표지
+            PageModule.add(); // 1페이지
+        }
+    </script>
+</body>
+</html>

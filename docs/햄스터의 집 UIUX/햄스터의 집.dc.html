@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Gaegu:wght@300;400;700&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_twelve@1.0/RIDIBatang.css">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  a{color:#cf6440;text-decoration:none}
+  a:hover{color:#d5842a}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#e0cba0;border:2px solid transparent;background-clip:content-box;border-radius:20px}
+  ::-webkit-scrollbar-track{background:transparent}
+  @keyframes hamster-dance{0%,15%{transform:translateX(0)}16%,31%{transform:translateX(-16.6667%)}32%,47%{transform:translateX(-33.3334%)}48%,63%{transform:translateX(-50%)}64%,79%{transform:translateX(-66.6667%)}80%,100%{transform:translateX(-83.3334%)}}
+  @keyframes seedfloat{0%,100%{transform:translateY(0) rotate(var(--r,18deg))}50%{transform:translateY(-9px) rotate(calc(var(--r,18deg) + 8deg))}}
+  @keyframes glowpulse{0%,100%{opacity:.85}50%{opacity:1}}
+  @keyframes risein{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes toastin{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
+</style>
+</helmet>
+<div ref="{{ rootRef }}" style="--paper:#fcf5e6;--paper-2:#f7edd7;--sand:#efe0c2;--sand-2:#e7d3ac;--wood:#38291b;--wood-2:#291c11;--ink:#42301f;--ink-soft:#8a755b;--line:#e7d5ad;--honey:#eaa53c;--honey-deep:#d5842a;--honey-soft:#fbe6bd;--clay:#cf6440;--blush:#eca79c;--leaf:#7f9553;--glow:#fff4dc;font-family:'Pretendard',sans-serif;color:var(--ink);width:100%;height:100vh;overflow:hidden;position:relative">
+
+  <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+  <div style="{{ homeRootStyle }};position:relative">
+    <span aria-hidden="true" style="position:absolute;top:16%;left:9%;width:12px;height:18px;--r:24deg;background:linear-gradient(160deg,#6a533a,#3f3122);border-radius:52% 52% 50% 50%/64% 64% 40% 40%;box-shadow:inset 0 3px 2px rgba(255,255,255,.2);animation:seedfloat 5.5s ease-in-out infinite"></span>
+    <span aria-hidden="true" style="position:absolute;top:62%;left:15%;width:10px;height:15px;--r:-18deg;background:linear-gradient(160deg,#6a533a,#3f3122);border-radius:52% 52% 50% 50%/64% 64% 40% 40%;box-shadow:inset 0 3px 2px rgba(255,255,255,.2);animation:seedfloat 6.4s ease-in-out .7s infinite"></span>
+    <span aria-hidden="true" style="position:absolute;top:26%;right:11%;width:13px;height:19px;--r:-32deg;background:linear-gradient(160deg,#6a533a,#3f3122);border-radius:52% 52% 50% 50%/64% 64% 40% 40%;box-shadow:inset 0 3px 2px rgba(255,255,255,.2);animation:seedfloat 5.9s ease-in-out .3s infinite"></span>
+    <span aria-hidden="true" style="position:absolute;top:70%;right:16%;width:11px;height:16px;--r:14deg;background:linear-gradient(160deg,#6a533a,#3f3122);border-radius:52% 52% 50% 50%/64% 64% 40% 40%;box-shadow:inset 0 3px 2px rgba(255,255,255,.2);animation:seedfloat 6.8s ease-in-out .9s infinite"></span>
+
+    <header style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:20px 22px;position:relative;z-index:4">
+      <div style="display:flex;align-items:center;gap:13px">
+        <div style="position:relative;display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:linear-gradient(150deg,#f2b657,#dd8f2c);box-shadow:0 6px 14px rgba(200,130,40,.32),inset 0 1px 0 rgba(255,255,255,.4)">
+          <span style="position:relative;width:19px;height:17px;border-radius:50% 50% 3px 3px;background:var(--wood-2)"><span style="position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:7px;height:7px;border-radius:50%;background:var(--honey-soft)"></span></span>
+        </div>
+        <div style="line-height:1.25">
+          <strong style="display:block;font-family:'Jua',sans-serif;font-size:20px;letter-spacing:-.01em;color:var(--ink)">햄스터의 집</strong>
+          <span style="display:block;font-family:'Gaegu',cursive;font-size:14px;color:var(--ink-soft)">포근한 굴 속 문장 작업실</span>
+        </div>
+      </div>
+      <div style="{{ pillDisplay }};font-family:'Gaegu',cursive;font-size:15px;color:var(--honey-deep);background:rgba(255,255,255,.55);border:1px solid var(--line);padding:6px 14px;border-radius:999px;white-space:nowrap">씨앗 모으듯, 문장 모으기 ✿</div>
+    </header>
+
+    <section style="{{ homeStageStyle }}">
+      <div style="position:relative;z-index:3;max-width:440px;animation:risein .7s cubic-bezier(.2,.8,.2,1) both">
+        <div style="font-family:'Gaegu',cursive;font-size:19px;color:var(--clay);margin-bottom:6px">오늘도 폭신하게,</div>
+        <h1 style="margin:0;font-family:'Jua',sans-serif;font-size:clamp(40px,5vw,66px);line-height:1.1;letter-spacing:-.02em;color:var(--ink)">{{ title }}</h1>
+        <p style="margin:16px 0 0;font-family:'Gaegu',cursive;font-size:19px;line-height:1.5;color:var(--ink-soft);max-width:340px">문장과 장면을 이불처럼 덮어, 나만의 작은 책으로 엮어 두는 곳이에요.</p>
+        <div style="display:flex;gap:8px;margin-top:20px;flex-wrap:wrap">
+          <span style="display:inline-flex;align-items:center;gap:7px;white-space:nowrap;font-size:12px;font-weight:600;color:var(--ink-soft);background:rgba(255,255,255,.6);border:1px solid var(--line);padding:7px 13px;border-radius:999px"><span style="width:8px;height:12px;background:linear-gradient(160deg,#6a533a,#3f3122);border-radius:52% 52% 50% 50%/64% 64% 40% 40%;transform:rotate(16deg)"></span>자동 저장</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;white-space:nowrap;font-size:12px;font-weight:600;color:var(--ink-soft);background:rgba(255,255,255,.6);border:1px solid var(--line);padding:7px 13px;border-radius:999px">PNG 내보내기</span>
+        </div>
+      </div>
+
+      <div style="position:relative;justify-self:center;width:min(100%,410px);display:flex;align-items:flex-end;justify-content:center">
+        <div style="position:relative;width:100%;max-width:410px;height:380px;border-radius:48% 48% 20px 20px/40% 40% 20px 20px;background:radial-gradient(120% 100% at 50% 8%, #6b4d31 0%, #4a3421 46%, #34240f 100%);box-shadow:inset 0 8px 34px rgba(0,0,0,.42),inset 0 -30px 44px rgba(0,0,0,.34),0 26px 44px rgba(74,52,28,.32);overflow:hidden">
+          <sc-if value="{{ lampGlow }}" hint-placeholder-val="{{ true }}">
+            <span aria-hidden="true" style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:2px;height:34px;background:#6a4f34"></span>
+            <span aria-hidden="true" style="position:absolute;top:30px;left:50%;transform:translateX(-50%);width:66px;height:34px;border-radius:8px 8px 40px 40px/8px 8px 26px 26px;background:linear-gradient(#4a3421,#3a2919);box-shadow:inset 0 -5px 9px rgba(0,0,0,.4)"></span>
+            <span aria-hidden="true" style="position:absolute;top:52px;left:50%;transform:translate(-50%,0);width:280px;height:280px;border-radius:50%;background:radial-gradient(circle,rgba(255,214,120,.5) 0%,rgba(255,200,96,.18) 40%,transparent 66%);animation:glowpulse 4s ease-in-out infinite;pointer-events:none"></span>
+          </sc-if>
+          <div aria-hidden="true" style="position:absolute;top:64px;left:26px;display:flex;flex-direction:column;gap:6px;transform:rotate(-4deg)">
+            <span style="width:70px;height:9px;border-radius:3px;background:#6a4d30;box-shadow:0 3px 5px rgba(0,0,0,.3)"></span>
+            <div style="display:flex;gap:3px;align-items:flex-end;padding-left:4px">
+              <span style="width:8px;height:30px;border-radius:2px;background:var(--clay)"></span>
+              <span style="width:7px;height:26px;border-radius:2px;background:var(--leaf)"></span>
+              <span style="width:9px;height:33px;border-radius:2px;background:var(--honey)"></span>
+              <span style="width:7px;height:24px;border-radius:2px;background:var(--blush)"></span>
+            </div>
+          </div>
+          <div style="position:absolute;bottom:0;left:0;right:0;height:64px;background:linear-gradient(#4a3624,#3a2917);box-shadow:inset 0 3px 6px rgba(0,0,0,.3)"></div>
+          <div style="position:absolute;left:50%;bottom:34px;transform:translateX(-50%);width:190px;height:46px;border-radius:50%;background:radial-gradient(circle,rgba(0,0,0,.32),transparent 70%)"></div>
+          <div style="position:absolute;left:50%;bottom:44px;transform:translateX(-50%);width:210px;height:26px;border-radius:50%;background:repeating-radial-gradient(circle at 50% 50%, #d98a5c 0 8px, #c9764a 8px 15px)"></div>
+          <div aria-hidden="true" style="position:absolute;left:50%;bottom:40px;transform:translateX(-50%);width:210px;height:305px;overflow:hidden">
+            <div style="width:600%;height:100%;background-image:url(assets/hamster-walk.png);background-position:left top;background-repeat:no-repeat;background-size:100% 100%;animation:hamster-dance 1.05s step-end infinite;filter:drop-shadow(0 12px 9px rgba(40,26,10,.4))"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section style="{{ homeActionsStyle }}">
+      <button type="button" onClick="{{ onNew }}" style="text-align:left;cursor:pointer;display:grid;grid-template-columns:46px 1fr auto;align-items:center;gap:14px;padding:18px 20px;border:1px solid var(--honey-deep);border-radius:20px;background:linear-gradient(160deg,#f4b95f,#e2952f);color:#3a250f;box-shadow:0 12px 24px rgba(210,135,42,.32),inset 0 1px 0 rgba(255,255,255,.4);transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s" style-hover="transform:translateY(-3px);box-shadow:0 18px 30px rgba(210,135,42,.42),inset 0 1px 0 rgba(255,255,255,.4)">
+        <span style="display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:rgba(255,255,255,.32)"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><path d="M14 2v6h6"/><path d="M3 15h6"/><path d="M6 12v6"/></svg></span>
+        <span style="min-width:0"><strong style="display:block;font-family:'Jua',sans-serif;font-size:16px">새 책 만들기</strong><small style="display:block;font-family:'Gaegu',cursive;font-size:14px;opacity:.85">새 이불 깔고 시작하기</small></span>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      </button>
+      <button type="button" onClick="{{ onContinue }}" style="text-align:left;cursor:pointer;display:grid;grid-template-columns:46px 1fr auto;align-items:center;gap:14px;padding:18px 20px;border:1px solid var(--line);border-radius:20px;background:var(--paper);color:var(--ink);box-shadow:0 8px 18px rgba(90,68,40,.1);transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s,border-color .18s" style-hover="transform:translateY(-3px);border-color:var(--honey);box-shadow:0 16px 26px rgba(90,68,40,.16)">
+        <span style="display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:var(--honey-soft);color:var(--honey-deep)"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+        <span style="min-width:0"><strong style="display:block;font-family:'Jua',sans-serif;font-size:16px">최근 작업 이어쓰기</strong><small style="display:block;font-family:'Gaegu',cursive;font-size:14px;color:var(--ink-soft)">덮어둔 이불 다시 펴기</small></span>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--ink-soft)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      </button>
+      <button type="button" onClick="{{ onImport }}" style="text-align:left;cursor:pointer;display:grid;grid-template-columns:46px 1fr auto;align-items:center;gap:14px;padding:18px 20px;border:1px solid var(--line);border-radius:20px;background:var(--paper);color:var(--ink);box-shadow:0 8px 18px rgba(90,68,40,.1);transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s,border-color .18s" style-hover="transform:translateY(-3px);border-color:var(--honey);box-shadow:0 16px 26px rgba(90,68,40,.16)">
+        <span style="display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:var(--honey-soft);color:var(--honey-deep)"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg></span>
+        <span style="min-width:0"><strong style="display:block;font-family:'Jua',sans-serif;font-size:16px">작업 파일 불러오기</strong><small style="display:block;font-family:'Gaegu',cursive;font-size:14px;color:var(--ink-soft)">다른 굴에서 가져오기</small></span>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--ink-soft)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      </button>
+    </section>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isEditor }}">
+  <div style="{{ shellStyle }};background:var(--sand)">
+
+    <nav style="{{ railStyle }}">
+      <div style="{{ railTop }}">
+      <div style="position:relative;display:grid;place-items:center;width:42px;height:42px;margin:16px 0 12px;border-radius:13px;background:linear-gradient(150deg,#f2b657,#dd8f2c);box-shadow:0 4px 10px rgba(0,0,0,.35)">
+        <span style="position:relative;width:18px;height:16px;border-radius:50% 50% 3px 3px;background:var(--wood-2)"><span style="position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:6px;height:6px;border-radius:50%;background:var(--honey-soft)"></span></span>
+      </div>
+      <div style="display:flex;gap:5px;padding-bottom:12px;margin-bottom:6px;border-bottom:1px solid rgba(255,240,210,.12)">
+        <button type="button" onClick="{{ onUndo }}" title="실행 취소" style="display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:9px;background:transparent;color:#c7b195;cursor:pointer" style-hover="background:rgba(255,255,255,.1);color:#fff"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+        <button type="button" onClick="{{ onRedo }}" title="다시 실행" style="display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:9px;background:transparent;color:#c7b195;cursor:pointer" style-hover="background:rgba(255,255,255,.1);color:#fff"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+      </div>
+      </div>
+      <div style="{{ toolListStyle }}">
+        <button type="button" onClick="{{ handlers.manuscript }}" title="원고" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:60px;border:0;border-radius:13px;cursor:pointer;background:{{ tb.manuscript.bg }};color:{{ tb.manuscript.fg }};transition:background .15s,color .15s">
+          <sc-if value="{{ active.manuscript }}"><span style="position:absolute;border-radius:3px;background:var(--honey);{{ tbBar }}"></span></sc-if>
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+          <span style="font-size:10px;font-weight:700">원고</span>
+        </button>
+        <button type="button" onClick="{{ handlers.theme }}" title="테마" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:60px;border:0;border-radius:13px;cursor:pointer;background:{{ tb.theme.bg }};color:{{ tb.theme.fg }};transition:background .15s,color .15s">
+          <sc-if value="{{ active.theme }}"><span style="position:absolute;border-radius:3px;background:var(--honey);{{ tbBar }}"></span></sc-if>
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".8"/><circle cx="17.5" cy="10.5" r=".8"/><circle cx="8.5" cy="7.5" r=".8"/><circle cx="6.5" cy="12.5" r=".8"/><path d="M12 2a10 10 0 0 0 0 20 2.5 2.5 0 0 0 2.5-2.5c0-.6-.2-1.1-.6-1.5-.4-.4-.6-.9-.6-1.5A2.5 2.5 0 0 1 15.8 14H18a4 4 0 0 0 4-4 10 10 0 0 0-10-8Z"/></svg>
+          <span style="font-size:10px;font-weight:700">테마</span>
+        </button>
+        <button type="button" onClick="{{ handlers.image }}" title="이미지" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:60px;border:0;border-radius:13px;cursor:pointer;background:{{ tb.image.bg }};color:{{ tb.image.fg }};transition:background .15s,color .15s">
+          <sc-if value="{{ active.image }}"><span style="position:absolute;border-radius:3px;background:var(--honey);{{ tbBar }}"></span></sc-if>
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/><circle cx="9" cy="9" r="2"/></svg>
+          <span style="font-size:10px;font-weight:700">이미지</span>
+        </button>
+        <button type="button" onClick="{{ handlers.dialogue }}" title="말풍선" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:60px;border:0;border-radius:13px;cursor:pointer;background:{{ tb.dialogue.bg }};color:{{ tb.dialogue.fg }};transition:background .15s,color .15s">
+          <sc-if value="{{ active.dialogue }}"><span style="position:absolute;border-radius:3px;background:var(--honey);{{ tbBar }}"></span></sc-if>
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/></svg>
+          <span style="font-size:10px;font-weight:700">말풍선</span>
+        </button>
+        <button type="button" onClick="{{ handlers.layout }}" title="지면" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:60px;border:0;border-radius:13px;cursor:pointer;background:{{ tb.layout.bg }};color:{{ tb.layout.fg }};transition:background .15s,color .15s">
+          <sc-if value="{{ active.layout }}"><span style="position:absolute;border-radius:3px;background:var(--honey);{{ tbBar }}"></span></sc-if>
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="7" x="3" y="3" rx="1.5"/><rect width="9" height="7" x="3" y="14" rx="1.5"/><rect width="5" height="7" x="16" y="14" rx="1.5"/></svg>
+          <span style="font-size:10px;font-weight:700">지면</span>
+        </button>
+        <button type="button" onClick="{{ handlers.footer }}" title="꼬리말" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:60px;border:0;border-radius:13px;cursor:pointer;background:{{ tb.footer.bg }};color:{{ tb.footer.fg }};transition:background .15s,color .15s">
+          <sc-if value="{{ active.footer }}"><span style="position:absolute;border-radius:3px;background:var(--honey);{{ tbBar }}"></span></sc-if>
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6H3"/><path d="M21 12H8"/><path d="M21 18H8"/><path d="M3 12v6"/></svg>
+          <span style="font-size:10px;font-weight:700">꼬리말</span>
+        </button>
+        <button type="button" onClick="{{ handlers.export }}" title="내보내기" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:60px;border:0;border-radius:13px;cursor:pointer;background:{{ tb.export.bg }};color:{{ tb.export.fg }};transition:background .15s,color .15s">
+          <sc-if value="{{ active.export }}"><span style="position:absolute;border-radius:3px;background:var(--honey);{{ tbBar }}"></span></sc-if>
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          <span style="font-size:10px;font-weight:700">내보내기</span>
+        </button>
+      </div>
+    </nav>
+
+    <aside style="{{ inspectorStyle }}">
+      <button type="button" onClick="{{ onCloseSheet }}" title="닫기" style="{{ closeStyle }};position:absolute;top:13px;right:14px;z-index:4;place-items:center;width:32px;height:32px;padding:0;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);cursor:pointer"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      <header style="display:flex;align-items:center;justify-content:space-between;min-height:70px;padding:16px 20px 14px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.42)">
+        <h2 style="margin:0;font-family:'Jua',sans-serif;font-size:20px;letter-spacing:-.01em;color:var(--ink)">{{ toolTitle }}</h2>
+        <span style="font-family:'Gaegu',cursive;font-size:14px;color:var(--honey-deep)">{{ toolHint }}</span>
+      </header>
+      <div style="flex:1;min-height:0;overflow:auto;padding:16px 16px 34px;display:flex;flex-direction:column;gap:14px">
+
+        <sc-if value="{{ active.manuscript }}">
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px 15px 17px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">본문 원고</div>
+            <label style="display:block;margin-bottom:12px"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">책 이름</span>
+              <input value="{{ title }}" onChange="{{ onTitle }}" style="width:100%;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:13px;outline:none" style-focus="border-color:var(--honey);box-shadow:0 0 0 3px rgba(234,165,60,.18)"></label>
+            <label style="display:block"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">본문</span>
+              <textarea value="{{ body }}" onChange="{{ onBody }}" spellcheck="false" style="width:100%;min-height:150px;resize:vertical;padding:12px;border:1px solid var(--line);border-radius:11px;background:#fff;color:#3c342c;font-family:'RIDIBatang','Noto Serif KR',serif;font-size:13px;line-height:1.65;outline:none" style-focus="border-color:var(--honey);box-shadow:0 0 0 3px rgba(234,165,60,.18)"></textarea>
+            </label>
+            <div style="font-family:'Gaegu',cursive;font-size:13px;color:var(--ink-soft);margin-top:7px">분량에 맞춰 페이지가 폭신하게 늘었다 줄어요.</div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:12px">
+              <button type="button" title="굵게" style="display:grid;place-items:center;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);cursor:pointer" style-hover="border-color:var(--clay)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/></svg></button>
+              <button type="button" title="기울임" style="display:grid;place-items:center;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);cursor:pointer" style-hover="border-color:var(--clay)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/></svg></button>
+              <button type="button" title="보조색 1" style="display:grid;place-items:center;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer"><span style="width:16px;height:16px;border-radius:50%;background:#f4cc55;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)"></span></button>
+              <button type="button" title="보조색 2" style="display:grid;place-items:center;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer"><span style="width:16px;height:16px;border-radius:50%;background:#9fd9cf;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)"></span></button>
+              <button type="button" title="보조색 3" style="display:grid;place-items:center;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer"><span style="width:16px;height:16px;border-radius:50%;background:#f3a6b5;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)"></span></button>
+              <button type="button" title="형광펜" style="display:grid;place-items:center;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);cursor:pointer" style-hover="border-color:var(--clay)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
+              <button type="button" title="서식 지우기" style="display:grid;place-items:center;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);cursor:pointer" style-hover="border-color:var(--clay)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+            </div>
+          </section>
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">스마트 하이라이트</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+              <label style="display:flex;align-items:center;gap:8px;height:40px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;cursor:pointer"><span style="width:20px;height:20px;border-radius:50%;background:{{ quoteColor }};box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)"></span><small style="font-size:11px;color:var(--ink-soft)">"인용"</small><input type="color" value="{{ quoteColor }}" onChange="{{ onQuote }}" style="width:0;height:0;opacity:0;position:absolute"></label>
+              <label style="display:flex;align-items:center;gap:8px;height:40px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;cursor:pointer"><span style="width:20px;height:20px;border-radius:50%;background:{{ bracketColor }};box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)"></span><small style="font-size:11px;color:var(--ink-soft)">(괄호)</small><input type="color" value="{{ bracketColor }}" onChange="{{ onBracket }}" style="width:0;height:0;opacity:0;position:absolute"></label>
+            </div>
+            <label style="display:flex;align-items:center;gap:9px;min-height:36px;margin-top:8px;font-size:12px;color:var(--ink);cursor:pointer"><input type="checkbox" style="width:16px;height:16px;accent-color:var(--clay)"><span>따옴표 문구 기울이기</span></label>
+            <label style="display:flex;align-items:center;gap:9px;min-height:32px;font-size:12px;color:var(--ink);cursor:pointer"><input type="checkbox" checked style="width:16px;height:16px;accent-color:var(--clay)"><span>괄호 문구 기울이기</span></label>
+          </section>
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">표지</div>
+            <label style="display:block;margin-bottom:10px"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">표지 구성</span>
+              <select style="width:100%;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;outline:none"><option>그림 + 글자</option><option>그림만</option><option>글자만</option><option>표지 삭제</option></select></label>
+            <label style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px dashed var(--honey-deep);border-radius:12px;background:var(--honey-soft);color:var(--honey-deep);font-size:12px;font-weight:700;cursor:pointer"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/><circle cx="9" cy="9" r="2"/></svg><span>표지 그림 불러오기</span></label>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ active.theme }}">
+          <div style="font-family:'Gaegu',cursive;font-size:15px;color:var(--ink-soft);padding:2px 4px 4px">마음에 드는 이불을 골라 덮어 보세요.</div>
+          <sc-for list="{{ themes }}" as="th" hint-placeholder-count="4">
+            <button type="button" onClick="{{ th.apply }}" style="display:grid;grid-template-columns:56px 1fr 22px;align-items:center;gap:12px;padding:11px;border:1px solid {{ th.border }};border-radius:15px;background:{{ th.bg }};text-align:left;cursor:pointer;box-shadow:{{ th.shadow }};transition:transform .15s,border-color .15s" style-hover="transform:translateY(-2px)">
+              <span style="display:grid;grid-template-columns:repeat(3,1fr);width:56px;height:42px;border-radius:10px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(0,0,0,.1)"><i style="background:{{ th.c0 }}"></i><i style="background:{{ th.c1 }}"></i><i style="background:{{ th.c2 }}"></i></span>
+              <span style="min-width:0"><strong style="display:block;font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:2px">{{ th.name }}</strong><small style="display:block;font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ th.desc }}</small></span>
+              <sc-if value="{{ th.active }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--honey-deep)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></sc-if>
+            </button>
+          </sc-for>
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;margin-top:4px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">현재 설정을 이불로 저장</div>
+            <input placeholder="예: 겨울 편지" style="width:100%;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;outline:none;margin-bottom:10px" style-focus="border-color:var(--honey);box-shadow:0 0 0 3px rgba(234,165,60,.18)">
+            <button type="button" onClick="{{ onSavePreset }}" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--honey-deep);border-radius:12px;background:linear-gradient(160deg,#f4b95f,#e2952f);color:#3a250f;font-size:12px;font-weight:700;cursor:pointer" style-hover="filter:brightness(1.04)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>저장</button>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ active.image }}">
+          <label style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:128px;border:1px dashed var(--honey-deep);border-radius:16px;background:var(--honey-soft);color:var(--honey-deep);cursor:pointer;text-align:center;padding:16px"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/><circle cx="9" cy="9" r="2"/></svg><strong style="font-family:'Jua',sans-serif;font-size:15px">이미지 추가</strong><span style="font-family:'Gaegu',cursive;font-size:14px;color:#a5762f">파일을 고르거나 페이지 위로 콕 끌어놓기</span></label>
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:4px">지금 고른 사진</div>
+            <div style="font-family:'Gaegu',cursive;font-size:13px;color:var(--ink-soft);margin-bottom:12px">캔버스에서 사진을 콕 누르면 조절 핸들이 나와요.</div>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:11px"><span style="display:flex;justify-content:space-between"><span>가로 위치</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">18%</output></span><input type="range" min="-50" max="100" value="18" style="width:100%;accent-color:var(--honey)"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:11px"><span style="display:flex;justify-content:space-between"><span>세로 위치</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">60%</output></span><input type="range" min="-30" max="100" value="60" style="width:100%;accent-color:var(--honey)"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:11px"><span style="display:flex;justify-content:space-between"><span>크기</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">30%</output></span><input type="range" min="8" max="120" value="30" style="width:100%;accent-color:var(--honey)"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:11px"><span style="display:flex;justify-content:space-between"><span>회전</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">4°</output></span><input type="range" min="-180" max="180" value="4" style="width:100%;accent-color:var(--honey)"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:13px"><span style="display:flex;justify-content:space-between"><span>투명도</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">100%</output></span><input type="range" min="5" max="100" value="100" style="width:100%;accent-color:var(--honey)"></label>
+            <button type="button" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid #d8a08e;border-radius:12px;background:#fff5f2;color:#a94b30;font-size:12px;font-weight:700;cursor:pointer"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>사진 지우기</button>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ active.dialogue }}">
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">멤버 프로필</div>
+            <button type="button" style="display:grid;grid-template-columns:34px 1fr 14px;width:100%;align-items:center;gap:10px;padding:6px 9px;border:1px solid var(--honey);border-radius:12px;background:#fff;text-align:left;cursor:pointer;box-shadow:inset 3px 0 var(--honey);margin-bottom:6px"><span style="display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--blush);color:#fff;font-family:'Jua',sans-serif;font-size:13px">토</span><strong style="font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">토실이</strong><i style="width:12px;height:12px;border-radius:50%;background:var(--blush);border:1px solid rgba(0,0,0,.1)"></i></button>
+            <button type="button" style="display:grid;grid-template-columns:34px 1fr 14px;width:100%;align-items:center;gap:10px;padding:6px 9px;border:1px solid var(--line);border-radius:12px;background:#fff;text-align:left;cursor:pointer;margin-bottom:10px"><span style="display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--honey);color:#fff;font-family:'Jua',sans-serif;font-size:13px">밤</span><strong style="font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">밤톨이</strong><i style="width:12px;height:12px;border-radius:50%;background:var(--honey);border:1px solid rgba(0,0,0,.1)"></i></button>
+            <button type="button" onClick="{{ onAddMember }}" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-size:12px;font-weight:700;cursor:pointer" style-hover="border-color:var(--honey)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 21a8 8 0 0 1 13.3-6"/><circle cx="10" cy="8" r="5"/><path d="M19 16v6"/><path d="M22 19h-6"/></svg>친구 초대하기</button>
+          </section>
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">새 말풍선</div>
+            <label style="display:block;margin-bottom:10px"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">멤버</span><select style="width:100%;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;outline:none"><option>토실이</option><option>밤톨이</option></select></label>
+            <label style="display:block;margin-bottom:10px"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">대사</span><textarea placeholder="말풍선에 넣을 문장" style="width:100%;min-height:70px;resize:vertical;padding:10px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;line-height:1.5;outline:none"></textarea></label>
+            <label style="display:block;margin-bottom:10px"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">작은 보조 문장</span><input placeholder="선택 사항" style="width:100%;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;outline:none"></label>
+            <button type="button" onClick="{{ onAddBubble }}" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--honey-deep);border-radius:12px;background:linear-gradient(160deg,#f4b95f,#e2952f);color:#3a250f;font-size:12px;font-weight:700;cursor:pointer"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/></svg>현재 페이지에 추가</button>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ active.layout }}">
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">페이지</div>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:11px"><span style="display:flex;justify-content:space-between"><span>페이지 너비</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">460px</output></span><input type="range" min="340" max="680" step="10" value="460" style="width:100%;accent-color:var(--honey)"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:11px"><span style="display:flex;justify-content:space-between"><span>가로 여백</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">54px</output></span><input type="range" min="24" max="110" value="54" style="width:100%;accent-color:var(--honey)"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600"><span style="display:flex;justify-content:space-between"><span>세로 여백</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">60px</output></span><input type="range" min="30" max="130" value="60" style="width:100%;accent-color:var(--honey)"></label>
+          </section>
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">글꼴</div>
+            <label style="display:block;margin-bottom:10px"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">기본 글꼴</span><select style="width:100%;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;outline:none"><option>RIDIBatang</option><option>Chosunilbo_myungjo</option><option>Noto Serif KR</option><option>Pretendard</option><option>Nanum Myeongjo</option></select></label>
+            <button type="button" onClick="{{ onLoadFonts }}" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-size:12px;font-weight:700;cursor:pointer;margin-bottom:10px" style-hover="border-color:var(--honey)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>내 PC 글꼴 목록</button>
+            <label style="display:block"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">굵기</span><select style="width:100%;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;outline:none"><option>얇게</option><option selected>보통</option><option>굵게</option></select></label>
+          </section>
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">조판</div>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:11px"><span style="display:flex;justify-content:space-between"><span>글자 크기</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">{{ fontSize }}px</output></span><input type="range" min="11" max="28" value="{{ fontSize }}" onInput="{{ onFontSize }}" style="width:100%;accent-color:var(--honey)"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:11px"><span style="display:flex;justify-content:space-between"><span>행간</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">1.72</output></span><input type="range" min="1.1" max="2.4" step="0.05" value="1.72" style="width:100%;accent-color:var(--honey)"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600;margin-bottom:11px"><span style="display:flex;justify-content:space-between"><span>자간</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">0px</output></span><input type="range" min="-1" max="6" step="0.1" value="0" style="width:100%;accent-color:var(--honey)"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;color:var(--ink-soft);font-size:11px;font-weight:600"><span style="display:flex;justify-content:space-between"><span>문단 간격</span><output style="color:var(--honey-deep);font-variant-numeric:tabular-nums">12px</output></span><input type="range" min="0" max="40" value="12" style="width:100%;accent-color:var(--honey)"></label>
+          </section>
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">지면 색</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+              <label style="display:flex;align-items:center;gap:8px;height:40px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;cursor:pointer"><span style="width:20px;height:20px;border-radius:50%;background:{{ theme.bg }};box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)"></span><small style="font-size:11px;color:var(--ink-soft)">종이</small><input type="color" value="{{ theme.bg }}" onChange="{{ onPaper }}" style="width:0;height:0;opacity:0;position:absolute"></label>
+              <label style="display:flex;align-items:center;gap:8px;height:40px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;cursor:pointer"><span style="width:20px;height:20px;border-radius:50%;background:{{ theme.text }};box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)"></span><small style="font-size:11px;color:var(--ink-soft)">글자</small><input type="color" value="{{ theme.text }}" onChange="{{ onText }}" style="width:0;height:0;opacity:0;position:absolute"></label>
+            </div>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ active.footer }}">
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">이 페이지 발도장</div>
+            <label style="display:block;margin-bottom:10px"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">제목</span><input value="{{ title }}" style="width:100%;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;outline:none"></label>
+            <label style="display:block;margin-bottom:10px"><span style="display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">부제목</span><input placeholder="장 제목, 날짜, 메모" style="width:100%;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;outline:none"></label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:6px"><label style="display:flex;align-items:center;gap:8px;height:40px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;cursor:pointer"><span style="width:20px;height:20px;border-radius:50%;background:{{ theme.text }};box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)"></span><small style="font-size:11px;color:var(--ink-soft)">글자색</small></label><label style="display:block"><select style="width:100%;height:40px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font-size:12px;outline:none"><option>얇게</option><option selected>보통</option><option>굵게</option></select></label></div>
+            <label style="display:flex;align-items:center;gap:9px;min-height:36px;font-size:12px;color:var(--ink);cursor:pointer"><input type="checkbox" style="width:16px;height:16px;accent-color:var(--clay)"><span>기울임</span></label>
+          </section>
+          <button type="button" onClick="{{ onApplyFooterAll }}" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--honey-deep);border-radius:12px;background:linear-gradient(160deg,#f4b95f,#e2952f);color:#3a250f;font-size:12px;font-weight:700;cursor:pointer"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>모든 페이지에 적용</button>
+          <button type="button" onClick="{{ onClearFooters }}" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-size:12px;font-weight:700;cursor:pointer" style-hover="border-color:var(--clay)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>모든 꼬리말 지우기</button>
+        </sc-if>
+
+        <sc-if value="{{ active.export }}">
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">이미지로 저장</div>
+            <button type="button" onClick="{{ onExportSelected }}" style="display:grid;grid-template-columns:34px 1fr;gap:11px;width:100%;align-items:center;padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff;text-align:left;cursor:pointer;margin-bottom:9px" style-hover="border-color:var(--honey)"><span style="color:var(--honey-deep)"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span><span><strong style="display:block;font-size:12px;color:var(--ink)">선택한 페이지만</strong><small style="display:block;font-size:10px;color:var(--ink-soft)">현재 페이지를 고해상도 PNG로</small></span></button>
+            <button type="button" onClick="{{ onExportSingle }}" style="display:grid;grid-template-columns:34px 1fr;gap:11px;width:100%;align-items:center;padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff;text-align:left;cursor:pointer;margin-bottom:9px" style-hover="border-color:var(--honey)"><span style="color:var(--honey-deep)"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="m9 15 3 3 3-3"/></svg></span><span><strong style="display:block;font-size:12px;color:var(--ink)">모든 페이지 낱장</strong><small style="display:block;font-size:10px;color:var(--ink-soft)">표지를 포함해 한 장씩</small></span></button>
+            <button type="button" onClick="{{ onExportSpread }}" style="display:grid;grid-template-columns:34px 1fr;gap:11px;width:100%;align-items:center;padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff;text-align:left;cursor:pointer" style-hover="border-color:var(--honey)"><span style="color:var(--honey-deep)"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 5.5c3.5-.8 6.5-.4 9 1.4v12c-2.5-1.8-5.5-2.2-9-1.4v-12Zm18 0c-3.5-.8-6.5-.4-9 1.4v12c2.5-1.8 5.5-2.2 9-1.4v-12Z"/></svg></span><span><strong style="display:block;font-size:12px;color:var(--ink)">양면 펼침</strong><small style="display:block;font-size:10px;color:var(--ink-soft)">두 페이지를 한 이미지로</small></span></button>
+          </section>
+          <section style="border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:15px;box-shadow:0 4px 12px rgba(90,68,40,.05)">
+            <div style="font-family:'Jua',sans-serif;font-size:14px;color:var(--ink);margin-bottom:12px">작업 파일</div>
+            <button type="button" onClick="{{ onSaveTemp }}" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--honey-deep);border-radius:12px;background:linear-gradient(160deg,#f4b95f,#e2952f);color:#3a250f;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:9px"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>브라우저에 임시 저장</button>
+            <button type="button" onClick="{{ onDownload }}" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-size:12px;font-weight:700;cursor:pointer;margin-bottom:9px" style-hover="border-color:var(--honey)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="m9 15 3 3 3-3"/></svg>작업 파일 받기</button>
+            <button type="button" onClick="{{ onImport }}" style="display:flex;width:100%;min-height:40px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-size:12px;font-weight:700;cursor:pointer" style-hover="border-color:var(--honey)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m15 15-3-3-3 3"/></svg>작업 파일 불러오기</button>
+          </section>
+        </sc-if>
+      </div>
+    </aside>
+
+    <section style="{{ workspaceStyle }}">
+      <header style="position:absolute;z-index:20;top:0;left:0;right:0;display:flex;height:64px;align-items:center;justify-content:space-between;padding:0 22px;border-bottom:1px solid var(--line);background:rgba(252,245,230,.86);backdrop-filter:blur(10px)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button type="button" onClick="{{ onToggleSheet }}" title="편집 도구" style="{{ menuStyle }};place-items:center;width:36px;height:36px;padding:0;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.7);color:var(--ink);cursor:pointer"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/></svg></button>
+          <button type="button" onClick="{{ goHome }}" title="집으로 돌아가기" style="display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.7);color:var(--ink);cursor:pointer" style-hover="background:#fff;border-color:var(--honey)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+          <strong style="font-family:'Jua',sans-serif;font-size:16px;color:var(--ink);max-width:min(38vw,420px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ title }}</strong>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;color:var(--ink-soft);font-size:12px">
+          <span>{{ pageCount }}장</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;color:var(--leaf);font-weight:600"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>저장됨</span>
+        </div>
+      </header>
+
+      <div style="width:100%;height:100%;overflow:auto;padding:92px 34px 150px">
+        <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:center;gap:30px">
+
+          <article onClick="{{ sel0 }}" style="position:relative;width:340px;aspect-ratio:1/1.414;flex:0 0 auto;overflow:hidden;border-radius:6px;outline:{{ ring0 }};outline-offset:4px;background:{{ theme.bg }};color:{{ theme.text }};box-shadow:0 14px 30px rgba(56,41,26,.2),0 2px 4px rgba(56,41,26,.1);cursor:pointer;font-family:'RIDIBatang','Noto Serif KR',serif">
+            <div style="position:absolute;inset:12% 10%;display:flex;flex-direction:column;justify-content:flex-end;border-top:1px solid currentColor;border-bottom:1px solid currentColor">
+              <div style="display:flex;justify-content:center;padding:16px 0"><span style="width:12px;height:18px;background:currentColor;opacity:.5;border-radius:52% 52% 50% 50%/64% 64% 40% 40%;transform:rotate(16deg)"></span></div>
+              <h1 style="margin:0 0 20px;font-size:30px;font-weight:600;line-height:1.25;word-break:keep-all">{{ title }}</h1>
+              <p style="margin:0 0 8px;font-size:13px;line-height:1.6;opacity:.86">{{ coverSubtitle }}</p>
+            </div>
+          </article>
+
+          <article onClick="{{ sel1 }}" style="position:relative;width:340px;aspect-ratio:1/1.414;flex:0 0 auto;overflow:hidden;border-radius:6px;outline:{{ ring1 }};outline-offset:4px;background:{{ theme.bg }};color:{{ theme.text }};box-shadow:0 14px 30px rgba(56,41,26,.2),0 2px 4px rgba(56,41,26,.1);cursor:pointer;font-family:'RIDIBatang','Noto Serif KR',serif">
+            <div style="position:absolute;top:13%;left:13%;right:13%;font-size:{{ bodyFontCss }};line-height:1.72;word-break:keep-all;white-space:pre-wrap">비가 오려는 오후였다. 창문 가장자리에는 아직 이름 없는 빛이 오래 머물렀다.<br><br><span style="color:{{ quoteColor }}">"조금 늦어도 괜찮아. 오늘의 문장은 오늘 안에만 오면 되니까."</span><br><br>나는 책상 위의 종이를 반듯하게 밀었다. <span style="color:{{ bracketColor }};font-style:italic">(잊지 말 것: 마음에 드는 문장은 두 번 읽기.)</span></div>
+            <div aria-hidden="true" style="position:absolute;top:60%;right:9%;width:104px;height:120px;transform:rotate(4deg);background:#fff;padding:7px 7px 22px;border-radius:3px;box-shadow:0 8px 16px rgba(50,35,20,.28)"><div style="width:100%;height:100%;border-radius:2px;background:linear-gradient(150deg,#f6c99f,#e79a86)"></div></div>
+            <span style="position:absolute;bottom:3.4%;left:0;right:0;text-align:center;font-family:'Pretendard',sans-serif;font-size:11px;opacity:.45">1</span>
+          </article>
+
+          <article onClick="{{ sel2 }}" style="position:relative;width:340px;aspect-ratio:1/1.414;flex:0 0 auto;overflow:hidden;border-radius:6px;outline:{{ ring2 }};outline-offset:4px;background:{{ theme.bg }};color:{{ theme.text }};box-shadow:0 14px 30px rgba(56,41,26,.2),0 2px 4px rgba(56,41,26,.1);cursor:pointer;font-family:'RIDIBatang','Noto Serif KR',serif">
+            <div style="position:absolute;top:13%;left:13%;right:13%;font-size:{{ bodyFontCss }};line-height:1.72;word-break:keep-all;white-space:pre-wrap">작은 방 안에서 종이 넘기는 소리가 생각보다 멀리 갔다.<br><br>한 페이지를 채우는 일은 하루를 정리하는 일과 닮았다. 꼭 필요한 장면만 남기고, 나머지는 여백에게 맡긴다.</div>
+            <div aria-hidden="true" style="position:absolute;top:52%;left:8%;width:60%;transform:rotate(-1deg)"><div style="position:relative;padding:12px 13px 11px;border-radius:14px;background:var(--blush);color:#40230f;box-shadow:0 6px 14px rgba(40,30,20,.16)"><strong style="display:block;font-family:'Gaegu',cursive;font-size:13px;margin-bottom:3px">토실이</strong><span style="font-size:12px;line-height:1.35">해바라기씨 더 없나…?</span><span style="position:absolute;bottom:-9px;left:20px;width:0;height:0;border-top:13px solid var(--blush);border-right:11px solid transparent"></span></div><span style="position:absolute;bottom:-22px;left:6px;width:34px;height:34px;border-radius:50%;border:3px solid #fff;background:var(--honey);box-shadow:0 4px 8px rgba(40,30,20,.2)"></span></div>
+            <div style="position:absolute;right:6%;bottom:6%;text-align:right;line-height:1.35"><strong style="font-size:12px">{{ title }}</strong><br><span style="font-size:10px;opacity:.7">오늘의 기록</span></div>
+            <span style="position:absolute;bottom:3.4%;left:0;right:0;text-align:center;font-family:'Pretendard',sans-serif;font-size:11px;opacity:.45">2</span>
+          </article>
+        </div>
+      </div>
+
+      <sc-if value="{{ toast }}"><div role="status" style="position:absolute;z-index:80;top:78px;left:50%;padding:10px 16px;border-radius:12px;background:{{ toastBg }};color:#fff;font-family:'Gaegu',cursive;font-size:15px;box-shadow:0 8px 20px rgba(40,28,15,.25);animation:toastin .2s ease both">{{ toastMsg }}</div></sc-if>
+
+      <div aria-live="polite" style="position:absolute;z-index:25;right:20px;bottom:16px;display:flex;align-items:flex-end;pointer-events:none">
+        <div style="max-width:190px;margin:0 -6px 46px 0;padding:9px 12px;border:1px solid var(--line);border-radius:12px 12px 0 12px;background:rgba(255,253,248,.96);color:var(--ink-soft);box-shadow:0 6px 16px rgba(46,34,20,.12);font-family:'Gaegu',cursive;font-size:14px;line-height:1.35">{{ mascot }}</div>
+        <div style="width:60px;height:87px;overflow:hidden;filter:drop-shadow(0 4px 3px rgba(50,42,31,.18))"><div style="width:600%;height:100%;background-image:url(assets/hamster-walk.png);background-position:left top;background-repeat:no-repeat;background-size:100% 100%;animation:hamster-dance 1.15s step-end infinite"></div></div>
+      </div>
+    </section>
+  </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;home&quot;,&quot;options&quot;:[&quot;home&quot;,&quot;editor&quot;],&quot;tsType&quot;:&quot;'home'|'editor'&quot;,&quot;section&quot;:&quot;미리보기&quot;},&quot;bookTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;paper-white&quot;,&quot;options&quot;:[&quot;paper-white&quot;,&quot;blue-hour&quot;,&quot;berry-letter&quot;,&quot;glass-house&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;미리보기&quot;},&quot;lampGlow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;미리보기&quot;}}">
+const BODY = `비가 오려는 오후였다. 창문 가장자리에는 아직 이름 없는 빛이 오래 머물렀다.
+
+"조금 늦어도 괜찮아. 오늘의 문장은 오늘 안에만 오면 되니까."
+
+나는 책상 위의 종이를 반듯하게 밀었다. (잊지 말 것: 마음에 드는 문장은 두 번 읽기.) 작은 방 안에서 종이 넘기는 소리가 생각보다 멀리 갔다.
+
+한 페이지를 채우는 일은 하루를 정리하는 일과 닮았다. 꼭 필요한 장면만 남기고, 나머지는 여백에게 맡긴다.`
+
+const THEMES = {
+  "paper-white": { name: "종이 위의 오후", desc: "산뜻한 종이와 산호색 교정 부호", bg: "#fbfaf6", text: "#242822", quote: "#d65435", bracket: "#18776d", c0: "#fbfaf6", c1: "#d65435", c2: "#18776d" },
+  "blue-hour": { name: "푸른 시각", desc: "먹빛 바탕 위 흐린 새벽의 문장", bg: "#202a31", text: "#e9f0ef", quote: "#f0a45d", bracket: "#8bc7c9", c0: "#202a31", c1: "#dce8ea", c2: "#f0a45d" },
+  "berry-letter": { name: "산딸기 편지", desc: "분홍빛 종이와 짙은 잉크의 대비", bg: "#fff5f5", text: "#3f2830", quote: "#a91f49", bracket: "#27636b", c0: "#fff5f5", c1: "#8f2440", c2: "#264a52" },
+  "glass-house": { name: "작은 온실", desc: "연한 민트와 녹슨 주황의 식물 기록", bg: "#eef6ef", text: "#253d35", quote: "#c65135", bracket: "#2f7361", c0: "#eef6ef", c1: "#315f50", c2: "#c95e3d" },
+}
+
+const TOOL_META = {
+  manuscript: { title: "원고와 표지", hint: "오늘의 문장" },
+  theme: { title: "전체 테마", hint: "이불 고르기" },
+  image: { title: "이미지 레이어", hint: "사진 붙이기" },
+  dialogue: { title: "말풍선", hint: "수다 떨기" },
+  layout: { title: "지면과 활자", hint: "폭신하게" },
+  footer: { title: "페이지 꼬리말", hint: "발도장 찍기" },
+  export: { title: "저장과 내보내기", hint: "굴 밖으로" },
+}
+
+class Component extends DCLogic {
+  state = {
+    cw: 0,
+    mobilePanelOpen: false,
+    screen: this.props.startScreen ?? "home",
+    tool: "manuscript",
+    themeId: THEMES[this.props.bookTheme] ? this.props.bookTheme : "paper-white",
+    selectedPage: 0,
+    title: "작고 사적인 방",
+    body: BODY,
+    coverSubtitle: "오늘의 문장과 장면을 엮습니다",
+    fontSize: 16,
+    quoteColor: THEMES[this.props.bookTheme]?.quote ?? THEMES["paper-white"].quote,
+    bracketColor: THEMES[this.props.bookTheme]?.bracket ?? THEMES["paper-white"].bracket,
+    mascot: "오늘도 폭신하게, 시작해 볼까요?",
+    toast: null,
+  }
+  toastTimer = null
+
+  rootRef = (el) => {
+    if (el && !this._ro) {
+      this._ro = new ResizeObserver((entries) => this.setState({ cw: Math.round(entries[0].contentRect.width) }))
+      this._ro.observe(el)
+    }
+  }
+  componentWillUnmount() {
+    if (this._ro) this._ro.disconnect()
+    clearTimeout(this.toastTimer)
+  }
+  componentDidUpdate(prevProps) {
+    if (prevProps.bookTheme !== this.props.bookTheme && THEMES[this.props.bookTheme]) {
+      const t = THEMES[this.props.bookTheme]
+      this.setState({ themeId: this.props.bookTheme, quoteColor: t.quote, bracketColor: t.bracket })
+    }
+    if (prevProps.startScreen !== this.props.startScreen && this.props.startScreen) {
+      this.setState({ screen: this.props.startScreen })
+    }
+  }
+
+  notify(message, tone = "default") {
+    this.setState({ toast: { message, tone }, mascot: message })
+    clearTimeout(this.toastTimer)
+    this.toastTimer = setTimeout(() => this.setState({ toast: null }), 2600)
+  }
+
+  go(screen) { this.setState({ screen }) }
+  setTool(tool) { this.setState({ tool }) }
+  applyTheme(id) {
+    const t = THEMES[id]
+    this.setState({ themeId: id, quoteColor: t.quote, bracketColor: t.bracket })
+    this.notify(`'${t.name}' 이불을 덮었어요!`, "success")
+  }
+
+  renderVals() {
+    const s = this.state
+    const t = THEMES[s.themeId]
+    const ids = ["manuscript", "theme", "image", "dialogue", "layout", "footer", "export"]
+    const active = {}, tb = {}, handlers = {}
+    ids.forEach((id) => {
+      active[id] = s.tool === id
+      tb[id] = { bg: active[id] ? "rgba(234,165,60,.16)" : "transparent", fg: active[id] ? "#f6c874" : "#b7a488" }
+      handlers[id] = () => this.setState({ tool: id, mobilePanelOpen: true })
+    })
+    const meta = TOOL_META[s.tool]
+    const themes = Object.keys(THEMES).map((id) => {
+      const th = THEMES[id], on = s.themeId === id
+      return { id, name: th.name, desc: th.desc, c0: th.c0, c1: th.c1, c2: th.c2, active: on,
+        bg: on ? "#fff" : "var(--paper)", border: on ? "var(--honey)" : "var(--line)",
+        shadow: on ? "0 8px 18px rgba(210,150,50,.2)" : "0 3px 9px rgba(90,68,40,.05)",
+        apply: () => this.applyTheme(id) }
+    })
+    const ring = (n) => s.selectedPage === n ? "3px solid var(--honey)" : "1px solid rgba(56,41,26,.08)"
+    const mobile = s.cw > 0 && s.cw < 720
+    const open = s.mobilePanelOpen
+    const railBg = "background:linear-gradient(180deg,#3d2c1c,#2c1e12);box-shadow:2px 0 14px rgba(0,0,0,.16);z-index:40;display:flex"
+    const inspBg = "background:var(--paper-2);display:flex;flex-direction:column;min-width:0"
+    const wsBg = "background-color:var(--sand);background-image:radial-gradient(circle, rgba(90,70,45,.10) 1px, transparent 1.4px);background-size:15px 15px;overflow:hidden"
+    return {
+      isHome: s.screen === "home",
+      rootRef: this.rootRef,
+      isEditor: s.screen === "editor",
+      shellStyle: mobile ? "display:block;position:relative;height:100%" : "display:grid;grid-template-columns:78px 344px minmax(0,1fr);height:100%",
+      railStyle: mobile ? railBg + ";position:absolute;left:0;right:0;bottom:0;height:66px;flex-direction:row;border-top:1px solid #1d130a" : railBg + ";flex-direction:column;align-items:center;border-right:1px solid #1d130a",
+      railTop: mobile ? "display:none" : "display:flex;flex-direction:column;align-items:center;width:100%",
+      toolListStyle: mobile ? "display:grid;grid-template-columns:repeat(7,1fr);gap:2px;width:100%;padding:6px 6px;align-items:center" : "display:flex;flex-direction:column;gap:4px;width:100%;padding:4px 8px;flex:1",
+      tbBar: mobile ? "top:-6px;left:50%;transform:translateX(-50%);width:26px;height:4px" : "left:-8px;top:50%;transform:translateY(-50%);width:4px;height:26px",
+      inspectorStyle: mobile ? inspBg + ";position:absolute;left:0;right:0;bottom:66px;z-index:50;height:min(74%,560px);border-top:1px solid var(--line);border-radius:18px 18px 0 0;box-shadow:0 -12px 30px rgba(35,44,38,.22);transition:transform .26s cubic-bezier(.2,.8,.2,1);transform:translateY(" + (open ? "0" : "125%") + ")" : inspBg + ";border-right:1px solid var(--line);box-shadow:5px 0 20px rgba(90,68,40,.07);z-index:30",
+      workspaceStyle: mobile ? wsBg + ";position:absolute;left:0;right:0;top:0;bottom:66px" : wsBg + ";position:relative;min-width:0;min-height:0",
+      closeStyle: mobile ? "display:grid" : "display:none",
+      menuStyle: mobile ? "display:grid" : "display:none",
+      pillDisplay: mobile ? "display:none" : "display:block",
+      onCloseSheet: () => this.setState({ mobilePanelOpen: false }),
+      onToggleSheet: () => this.setState((p) => ({ mobilePanelOpen: !p.mobilePanelOpen })),
+      homeRootStyle: mobile ? "height:100%;display:grid;grid-template-rows:auto auto auto;gap:2px;overflow-y:auto;background:radial-gradient(125% 55% at 50% -8%, #fff7e6 0%, #f4e7ca 46%, #e7d2a6 100%)" : "height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;background:radial-gradient(125% 92% at 50% -12%, #fff7e6 0%, #f4e7ca 44%, #e7d2a6 100%)",
+      homeStageStyle: mobile ? "position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;padding:12px 20px 6px;text-align:center" : "position:relative;min-height:0;display:grid;grid-template-columns:1.05fr .95fr;align-items:center;gap:10px;padding:4px 40px 8px",
+      homeActionsStyle: mobile ? "display:grid;grid-template-columns:1fr;gap:11px;padding:6px 20px 26px;position:relative;z-index:5" : "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:14px 34px 30px;position:relative;z-index:5",
+      lampGlow: this.props.lampGlow ?? true,
+      title: s.title,
+      body: s.body,
+      coverSubtitle: s.coverSubtitle,
+      onTitle: (e) => this.setState({ title: e.target.value }),
+      onBody: (e) => this.setState({ body: e.target.value }),
+      onQuote: (e) => this.setState({ quoteColor: e.target.value }),
+      onBracket: (e) => this.setState({ bracketColor: e.target.value }),
+      quoteColor: s.quoteColor,
+      bracketColor: s.bracketColor,
+      bodyFontCss: (s.fontSize * 0.82).toFixed(1) + "px",
+      onNew: () => { this.setState({ screen: "editor", tool: "manuscript", selectedPage: 0 }); this.notify("새 이불을 폈어요. 첫 문장을 적어볼까요?", "success") },
+      onContinue: () => { this.setState({ screen: "editor" }); this.notify("이어서 폭신하게 써 볼까요?", "success") },
+      onImport: () => this.notify("작업 파일을 골라 주세요 (.hamsterbook)"),
+      goHome: () => this.go("home"),
+      onUndo: () => this.notify("한 걸음 뒤로 갔어요."),
+      onRedo: () => this.notify("다시 앞으로!"),
+      onSavePreset: () => this.notify("현재 설정을 이불로 저장했어요!", "success"),
+      fontSize: s.fontSize,
+      onFontSize: (e) => this.setState({ fontSize: Number(e.target.value) }),
+      onAddImage: () => this.notify("사진을 페이지에 콕 놓았어요.", "success"),
+      onAddMember: () => this.notify("새 친구를 초대했어요!", "success"),
+      onAddBubble: () => this.notify("말풍선을 현재 페이지에 놓았어요.", "success"),
+      onLoadFonts: () => this.notify("내 PC 글꼴을 살펴볼게요…"),
+      onPaper: () => this.notify("종이 색을 바꿨어요."),
+      onText: () => this.notify("글자 색을 바꿨어요."),
+      onApplyFooterAll: () => this.notify("모든 페이지에 발도장을 찍었어요!", "success"),
+      onClearFooters: () => this.notify("꼬리말을 모두 지웠어요."),
+      onExportSelected: () => this.notify("이 페이지를 PNG로 구워요…"),
+      onExportSingle: () => this.notify("모든 페이지를 낱장으로 구워요…"),
+      onExportSpread: () => this.notify("양면 펼침으로 구워요…"),
+      onSaveTemp: () => this.notify("브라우저에 폭신하게 담아뒀어요.", "success"),
+      onDownload: () => this.notify("작업 파일을 내려받아요 (.hamsterbook)"),
+      handlers, active, tb,
+      toolTitle: meta.title,
+      toolHint: meta.hint,
+      showPlaceholderPanel: !active.manuscript && !active.theme,
+      theme: { bg: t.bg, text: t.text },
+      themes,
+      sel0: () => this.setState({ selectedPage: 0 }),
+      sel1: () => this.setState({ selectedPage: 1 }),
+      sel2: () => this.setState({ selectedPage: 2 }),
+      ring0: ring(0), ring1: ring(1), ring2: ring(2),
+      pageCount: 3,
+      mascot: s.mascot,
+      toast: !!s.toast,
+      toastMsg: s.toast?.message ?? "",
+      toastBg: s.toast?.tone === "success" ? "var(--leaf)" : s.toast?.tone === "warn" ? "#9c4937" : "var(--wood)",
+    }
+  }
+}
+</script>
+</body>
+</html>
