@@ -1424,6 +1424,7 @@ kbd {
   position: absolute;
   z-index: 3;
   top: var(--page-padding-y);
+  bottom: 11%;
   left: var(--page-padding-x);
   width: calc((100% - var(--page-padding-x) - var(--page-padding-x)) / var(--page-scale-x));
   transform: scaleX(var(--page-scale-x));
