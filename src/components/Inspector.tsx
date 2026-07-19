@@ -22,6 +22,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, CSSProperties, PointerEvent, ReactNode } from "react"
 import { DEFAULT_OPTIONS, THEMES } from "../data/themes"
+import { avatarFrame, avatarStyle, clampAvatarCenter } from "../lib/avatar"
 import { fitImageToPage } from "../lib/image"
 import type {
   BookDocument,
@@ -150,18 +151,6 @@ function ColorInput({ value, onChange, label }: { value: string; onChange: (valu
   )
 }
 
-function avatarStyle(member: MemberProfile): CSSProperties {
-  const scale = member.avatarScale ?? 100
-  return {
-    objectPosition: `${member.avatarX ?? 50}% ${member.avatarY ?? 50}%`,
-    transform: `translate(-50%, -50%) scale(${scale / 100})`,
-  }
-}
-
-function clampAvatarPosition(value: number) {
-  return Math.max(0, Math.min(100, value))
-}
-
 function AvatarCropper({ member, onChange }: { member: MemberProfile; onChange: (patch: Partial<MemberProfile>) => void }) {
   const [position, setPosition] = useState({ x: member.avatarX ?? 50, y: member.avatarY ?? 50 })
   const drag = useRef<{
@@ -194,10 +183,10 @@ function AvatarCropper({ member, onChange }: { member: MemberProfile; onChange: 
   const move = (event: PointerEvent<HTMLDivElement>) => {
     const current = drag.current
     if (!current) return
-    const scale = member.avatarScale ?? 100
+    const frame = avatarFrame(member)
     const next = {
-      x: clampAvatarPosition(current.originX - ((event.clientX - current.startX) / current.rect.width) * (10000 / scale)),
-      y: clampAvatarPosition(current.originY - ((event.clientY - current.startY) / current.rect.height) * (10000 / scale)),
+      x: clampAvatarCenter(current.originX + ((event.clientX - current.startX) / current.rect.width) * 100, frame.width),
+      y: clampAvatarCenter(current.originY + ((event.clientY - current.startY) / current.rect.height) * 100, frame.height),
     }
     current.position = next
     setPosition(next)
@@ -225,7 +214,15 @@ function AvatarCropper({ member, onChange }: { member: MemberProfile; onChange: 
           src={member.avatar}
           alt="프로필 사진 자르기 미리보기"
           draggable={false}
-          style={{ ...avatarStyle(member), objectPosition: `${position.x}% ${position.y}%` }}
+          style={{ ...avatarStyle(member), left: `${position.x}%`, top: `${position.y}%` }}
+          onLoad={(event) => {
+            if (member.avatarAspectRatio) return
+            onChange({
+              avatarAspectRatio: event.currentTarget.naturalWidth / Math.max(1, event.currentTarget.naturalHeight),
+              avatarX: 50,
+              avatarY: 50,
+            })
+          }}
         />
         <span className="avatar-crop-guide" aria-hidden="true" />
       </div>
@@ -235,11 +232,13 @@ function AvatarCropper({ member, onChange }: { member: MemberProfile; onChange: 
         max={300}
         value={scale}
         suffix="%"
-        onChange={(avatarScale) => onChange({
-          avatarScale,
-          avatarX: position.x,
-          avatarY: position.y,
-        })}
+        onChange={(avatarScale) => {
+          const frame = avatarFrame({ avatarAspectRatio: member.avatarAspectRatio, avatarScale })
+          const avatarX = clampAvatarCenter(position.x, frame.width)
+          const avatarY = clampAvatarCenter(position.y, frame.height)
+          setPosition({ x: avatarX, y: avatarY })
+          onChange({ avatarScale, avatarX, avatarY })
+        }}
       />
       <button className="secondary-button" type="button" onClick={() => onChange({ avatarScale: 100, avatarX: 50, avatarY: 50 })}>
         <RotateCcw aria-hidden="true" /> 위치 초기화
@@ -778,7 +777,7 @@ function ExportPanel(props: Props) {
           </button>
           <button className="export-choice" type="button" onClick={() => props.onExport("spread")}>
             <BookSpreadIcon />
-            <span><strong>양면 펼침</strong><small>두 페이지를 한 이미지로 묶어 저장</small></span>
+            <span><strong>양면 펼침</strong><small>두 쪽씩 묶고 마지막 홀수 쪽은 낱장 저장</small></span>
           </button>
         </Section>
         <Section title="작업 파일" open={false}>

@@ -1482,6 +1482,7 @@ kbd {
 
 .book-page {
   position: relative;
+  isolation: isolate;
   container-type: inline-size;
   width: min(var(--page-width), calc(100vw - 470px));
   max-width: var(--page-width);
@@ -1579,13 +1580,18 @@ kbd {
   z-index: 4;
   right: var(--page-padding-x);
   bottom: 11%;
+  box-sizing: border-box;
   width: calc((100% - var(--page-padding-x) - var(--page-padding-x)) / var(--page-scale-x));
-  padding: 0 4px 0 0;
+  padding: 0;
   border: 0;
   outline: 0;
   resize: none;
   background: transparent;
   color: transparent;
+  font-family: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
   -webkit-text-fill-color: transparent;
   caret-color: var(--page-color);
   overflow: auto;
@@ -1644,7 +1650,7 @@ kbd {
 
 .cover-copy {
   position: absolute;
-  z-index: 4;
+  z-index: 100000;
   top: 12%;
   right: 10%;
   bottom: 12%;
@@ -1654,6 +1660,7 @@ kbd {
   justify-content: flex-end;
   border-top: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
+  pointer-events: none;
 }
 
 .cover-copy.is-over-image {

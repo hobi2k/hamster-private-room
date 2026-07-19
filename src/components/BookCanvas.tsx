@@ -1,6 +1,7 @@
 import { Check, RotateCw, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
+import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
 import type { BookDocument, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
@@ -45,15 +46,18 @@ type BubblePointerSession = {
 }
 
 function TextContent({ document, page }: { document: BookDocument; page: PageSlice }) {
+  let offset = 0
   return decoratePage(document.body, page, document.marks, document.options).map((slice, index) => {
     const bits = slice.text.split(/(\n\n|\n)/)
     return bits.map((bit, bitIndex) => {
+      const textOffset = offset
+      offset += bit.length
       if (bit === "\n\n") {
-        return <span className="paragraph-gap" style={{ height: document.options.paragraphSpacing }} key={`${index}-${bitIndex}`} />
+        return <span className="paragraph-gap" data-text-offset={textOffset} style={{ height: document.options.paragraphSpacing }} key={`${index}-${bitIndex}`} />
       }
-      if (bit === "\n") return <br key={`${index}-${bitIndex}`} />
+      if (bit === "\n") return <br data-text-offset={textOffset} key={`${index}-${bitIndex}`} />
       return (
-        <span style={slice.style} key={`${index}-${bitIndex}`}>
+        <span data-text-offset={textOffset} style={slice.style} key={`${index}-${bitIndex}`}>
           {bit}
         </span>
       )
@@ -93,10 +97,16 @@ function PageTextEditor({
   onInteractionEnd: () => void
 }) {
   const [draft, setDraft] = useState(page.text)
-  const [scrollTop, setScrollTop] = useState(0)
   const editorRef = useRef<HTMLTextAreaElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const requestedCaret = useRef(0)
+  const selectText = useRef(onSelectText)
   const dirty = useRef(false)
   const finishTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    selectText.current = onSelectText
+  }, [onSelectText])
 
   useEffect(() => {
     if (!editing) setDraft(page.text)
@@ -106,10 +116,15 @@ function PageTextEditor({
     if (!editing) return
     const editor = editorRef.current
     if (!editor) return
-    editor.focus()
-    editor.setSelectionRange(editor.value.length, editor.value.length)
-    onSelectText({ start: page.start + editor.value.length, end: page.start + editor.value.length })
-  }, [editing, onSelectText, page.start])
+    const caret = Math.min(requestedCaret.current, editor.value.length)
+    editor.focus({ preventScroll: true })
+    editor.setSelectionRange(caret, caret)
+    const frame = window.requestAnimationFrame(() => {
+      if (overlayRef.current) overlayRef.current.style.transform = `translateY(${-editor.scrollTop}px)`
+    })
+    selectText.current({ start: page.start + caret, end: page.start + caret })
+    return () => window.cancelAnimationFrame(frame)
+  }, [editing, page.start])
 
   const updateSelection = () => {
     const editor = editorRef.current
@@ -149,7 +164,7 @@ function PageTextEditor({
     return (
       <>
         <div className="page-copy page-copy-editor-preview" aria-hidden="true">
-          <div style={{ transform: `translateY(${-scrollTop}px)` }}>
+          <div ref={overlayRef}>
             <DraftTextContent document={document} page={page} text={draft} />
           </div>
         </div>
@@ -162,7 +177,9 @@ function PageTextEditor({
             dirty.current = true
             setDraft(event.target.value)
           }}
-          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+          onScroll={(event) => {
+            if (overlayRef.current) overlayRef.current.style.transform = `translateY(${-event.currentTarget.scrollTop}px)`
+          }}
           onSelect={updateSelection}
           onKeyUp={updateSelection}
           onBlur={scheduleFinishEditing}
@@ -183,6 +200,12 @@ function PageTextEditor({
           onSelectPage(true)
           return
         }
+        const position = window.document.caretPositionFromPoint?.(event.clientX, event.clientY)
+        const target = position?.offsetNode instanceof Element ? position.offsetNode : position?.offsetNode.parentElement
+        const segment = target?.closest<HTMLElement>("[data-text-offset]")
+        requestedCaret.current = Math.max(0, Math.min(page.text.length,
+          Number(segment?.dataset.textOffset ?? 0) + (position?.offsetNode.nodeType === Node.TEXT_NODE ? position.offset : 0),
+        ))
         onStartEditing()
       }}
       title="본문 편집"
@@ -397,10 +420,7 @@ function SpeechBubbleItem({
         src={avatar}
         alt={`${speakerName} 프로필`}
         draggable={false}
-        style={{
-          objectPosition: `${profile?.avatarX ?? 50}% ${profile?.avatarY ?? 50}%`,
-          transform: `translate(-50%, -50%) scale(${(profile?.avatarScale ?? 100) / 100})`,
-        }}
+        style={profile ? avatarStyle(profile) : undefined}
       />
     </span>
   ) : null

@@ -443,11 +443,12 @@ export default function App() {
       notify("프로필 사진을 읽지 못했어요.", "warn")
       return
     }
-    patchMember(id, { avatar, avatarScale: 100, avatarX: 50, avatarY: 50 })
+    const avatarAspectRatio = await imageAspectRatio(avatar)
+    patchMember(id, { avatar, avatarAspectRatio, avatarScale: 100, avatarX: 50, avatarY: 50 })
   }
 
   const deleteMemberAvatar = (id: string) => {
-    patchMember(id, { avatar: "", avatarScale: 100, avatarX: 50, avatarY: 50 })
+    patchMember(id, { avatar: "", avatarAspectRatio: undefined, avatarScale: 100, avatarX: 50, avatarY: 50 })
     notify("프로필 사진을 지웠어요.")
   }
 

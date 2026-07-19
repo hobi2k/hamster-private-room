@@ -28,6 +28,13 @@ function findPage(selectedPage: number) {
   return pages.find((page) => Number(page.dataset.pageIndex) === selectedPage) ?? pages[0]
 }
 
+export function planSpreadExport(pageCount: number) {
+  return Array.from({ length: Math.ceil(pageCount / 2) }, (_, index) => ({
+    left: index * 2,
+    right: index * 2 + 1 < pageCount ? index * 2 + 1 : null,
+  }))
+}
+
 export async function copyBookPage(selectedPage: number) {
   const selected = findPage(selectedPage)
   if (!selected || !navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
@@ -61,19 +68,25 @@ export async function exportBook(mode: ExportMode, selectedPage: number, title: 
       }
       return
     }
-    for (let index = 0; index < pages.length; index += 2) {
-      const left = await capture(pages[index])
-      const right = pages[index + 1] ? await capture(pages[index + 1]) : null
+    for (const [spreadIndex, pair] of planSpreadExport(pages.length).entries()) {
+      const left = await capture(pages[pair.left])
+      if (pair.right === null) {
+        const pageNumber = pages[pair.left].dataset.pageIndex ?? pair.left
+        download(left, `${safeTitle}-page-${pageNumber}.png`)
+        await new Promise((resolve) => window.setTimeout(resolve, 180))
+        continue
+      }
+      const right = await capture(pages[pair.right])
       const spread = document.createElement("canvas")
-      spread.width = left.width + (right?.width ?? left.width)
-      spread.height = Math.max(left.height, right?.height ?? 0)
+      spread.width = left.width + right.width
+      spread.height = Math.max(left.height, right.height)
       const context = spread.getContext("2d")
       if (!context) continue
       context.fillStyle = "#ffffff"
       context.fillRect(0, 0, spread.width, spread.height)
       context.drawImage(left, 0, 0)
-      if (right) context.drawImage(right, left.width, 0)
-      download(spread, `${safeTitle}-spread-${Math.floor(index / 2) + 1}.png`)
+      context.drawImage(right, left.width, 0)
+      download(spread, `${safeTitle}-spread-${spreadIndex + 1}.png`)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
     }
   } finally {

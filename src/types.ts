@@ -34,6 +34,7 @@ export type MemberProfile = {
   id: string
   name: string
   avatar: string
+  avatarAspectRatio?: number
   avatarScale: number
   avatarX: number
   avatarY: number
