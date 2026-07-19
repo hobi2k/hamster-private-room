@@ -26,6 +26,7 @@ export const DEFAULT_OPTIONS: BookOptions = {
   coverTitle: "작고 사적인 방",
   coverTitleColor: "",
   coverSubtitle: "오늘의 문장과 장면을 엮습니다",
+  coverSubtitleColor: "",
   coverImage: "",
 }
 

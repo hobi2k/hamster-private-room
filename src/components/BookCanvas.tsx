@@ -639,7 +639,9 @@ export function BookCanvas(props: Props) {
               <h1 style={props.document.options.coverTitleColor ? { color: props.document.options.coverTitleColor } : undefined}>
                 {props.document.options.coverTitle || props.document.title}
               </h1>
-              <p>{props.document.options.coverSubtitle}</p>
+              <p style={props.document.options.coverSubtitleColor ? { color: props.document.options.coverSubtitleColor } : undefined}>
+                {props.document.options.coverSubtitle}
+              </p>
             </div>
           ) : null}
         </DropPage>

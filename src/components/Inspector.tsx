@@ -374,13 +374,23 @@ function ManuscriptPanel(props: Props) {
               value={options.coverTitleColor || (options.coverImage && options.coverMode === "image-text" ? "#ffffff" : options.textColor)}
               onChange={(coverTitleColor) => props.onPatchOptions({ coverTitleColor })}
             />
-            <button className="secondary-button" type="button" onClick={() => props.onPatchOptions({ coverTitleColor: "" })}>
+            <button className="secondary-button" type="button" aria-label="표지 제목색 자동 적용" onClick={() => props.onPatchOptions({ coverTitleColor: "" })}>
               <RotateCcw aria-hidden="true" /> 자동색
             </button>
           </div>
           <Field label="표지 부제">
             <input value={options.coverSubtitle} onChange={(event) => props.onPatchOptions({ coverSubtitle: event.target.value })} />
           </Field>
+          <div className="two-column-fields">
+            <ColorInput
+              label="표지 부제색"
+              value={options.coverSubtitleColor || (options.coverImage && options.coverMode === "image-text" ? "#ffffff" : options.textColor)}
+              onChange={(coverSubtitleColor) => props.onPatchOptions({ coverSubtitleColor })}
+            />
+            <button className="secondary-button" type="button" aria-label="표지 부제색 자동 적용" onClick={() => props.onPatchOptions({ coverSubtitleColor: "" })}>
+              <RotateCcw aria-hidden="true" /> 자동색
+            </button>
+          </div>
           <label className="file-button">
             <ImagePlus aria-hidden="true" />
             <span>표지 그림 불러오기</span>
