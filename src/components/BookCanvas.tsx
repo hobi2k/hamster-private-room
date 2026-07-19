@@ -1,6 +1,6 @@
-import { RotateCw, Trash2 } from "lucide-react"
+import { Check, RotateCw, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
-import type { CSSProperties, DragEvent, FocusEvent, FormEvent, PointerEvent, ReactNode } from "react"
+import type { CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
 import { decoratePage } from "../lib/pagination"
 import type { BookDocument, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
@@ -8,10 +8,11 @@ type Props = {
   document: BookDocument
   pages: PageSlice[]
   selectedPage: number
+  selectedPages: number[]
   selectedImageId: string
   selectedBubbleId: string
   transformMode: boolean
-  onSelectPage: (page: number) => void
+  onSelectPage: (page: number, additive?: boolean) => void
   onSelectImage: (id: string) => void
   onSelectBubble: (id: string) => void
   onAddImage: (file: File, page: number) => void
@@ -60,11 +61,20 @@ function TextContent({ document, page }: { document: BookDocument; page: PageSli
   })
 }
 
+function DraftTextContent({ document, page, text }: { document: BookDocument; page: PageSlice; text: string }) {
+  const body = `${document.body.slice(0, page.start)}${text}${document.body.slice(page.end)}`
+  const draftPage = { text, start: page.start, end: page.start + text.length }
+  return decoratePage(body, draftPage, document.marks, document.options).map((slice, index) => (
+    <span style={slice.style} key={index}>{slice.text}</span>
+  ))
+}
+
 function PageTextEditor({
   document,
   page,
   editing,
   onStartEditing,
+  onSelectPage,
   onFinishEditing,
   onChange,
   onSelectText,
@@ -75,6 +85,7 @@ function PageTextEditor({
   page: PageSlice
   editing: boolean
   onStartEditing: () => void
+  onSelectPage: (additive: boolean) => void
   onFinishEditing: () => void
   onChange: (start: number, end: number, text: string) => void
   onSelectText: (selection: TextSelection) => void
@@ -82,6 +93,7 @@ function PageTextEditor({
   onInteractionEnd: () => void
 }) {
   const [draft, setDraft] = useState(page.text)
+  const [scrollTop, setScrollTop] = useState(0)
   const editorRef = useRef<HTMLTextAreaElement>(null)
   const dirty = useRef(false)
   const finishTimer = useRef<number | null>(null)
@@ -135,22 +147,30 @@ function PageTextEditor({
 
   if (editing) {
     return (
-      <textarea
-        ref={editorRef}
-        className="page-copy page-copy-editor"
-        value={draft}
-        onChange={(event) => {
-          if (!dirty.current) onInteractionStart()
-          dirty.current = true
-          setDraft(event.target.value)
-        }}
-        onSelect={updateSelection}
-        onKeyUp={updateSelection}
-        onBlur={scheduleFinishEditing}
-        onClick={(event) => event.stopPropagation()}
-        spellCheck={false}
-        aria-label="페이지 본문 편집"
-      />
+      <>
+        <div className="page-copy page-copy-editor-preview" aria-hidden="true">
+          <div style={{ transform: `translateY(${-scrollTop}px)` }}>
+            <DraftTextContent document={document} page={page} text={draft} />
+          </div>
+        </div>
+        <textarea
+          ref={editorRef}
+          className="page-copy page-copy-editor"
+          value={draft}
+          onChange={(event) => {
+            if (!dirty.current) onInteractionStart()
+            dirty.current = true
+            setDraft(event.target.value)
+          }}
+          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+          onSelect={updateSelection}
+          onKeyUp={updateSelection}
+          onBlur={scheduleFinishEditing}
+          onClick={(event) => event.stopPropagation()}
+          spellCheck={false}
+          aria-label="페이지 본문 편집"
+        />
+      </>
     )
   }
 
@@ -159,6 +179,10 @@ function PageTextEditor({
       className="page-copy page-copy-preview"
       onClick={(event) => {
         event.stopPropagation()
+        if (event.ctrlKey || event.metaKey) {
+          onSelectPage(true)
+          return
+        }
         onStartEditing()
       }}
       title="본문 편집"
@@ -217,18 +241,19 @@ function ImageItem({
     const dx = ((event.clientX - current.startX) / current.pageRect.width) * 100
     const dy = ((event.clientY - current.startY) / current.pageRect.height) * 100
     if (current.action === "move") {
+      const height = current.layer.width / ((current.layer.aspectRatio ?? 1) * 1.414)
       onChange({
         x: Math.max(-current.layer.width + 3, Math.min(97, current.layer.x + dx)),
-        y: Math.max(-20, Math.min(98, current.layer.y + dy)),
+        y: Math.max(-height + 3, Math.min(97, current.layer.y + dy)),
       })
       return
     }
     if (current.action === "resize") {
-      onChange({ width: Math.max(8, Math.min(120, current.layer.width + dx)) })
+      onChange({ width: Math.max(8, Math.min(500, current.layer.width + dx)) })
       return
     }
     const centerX = current.pageRect.left + ((current.layer.x + current.layer.width / 2) / 100) * current.pageRect.width
-    const centerY = current.pageRect.top + (current.layer.y / 100) * current.pageRect.height + (current.layer.width / 200) * current.pageRect.width
+    const centerY = current.pageRect.top + (current.layer.y / 100) * current.pageRect.height + (current.layer.width / (200 * (current.layer.aspectRatio ?? 1))) * current.pageRect.width
     const angle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * (180 / Math.PI)
     onChange({ rotation: Math.round(current.layer.rotation + angle - current.startAngle) })
   }
@@ -257,7 +282,15 @@ function ImageItem({
       onPointerCancel={end}
       data-image-layer={layer.id}
     >
-      <img src={layer.src} alt={layer.name} draggable={false} />
+      <img
+        src={layer.src}
+        alt={layer.name}
+        draggable={false}
+        onLoad={(event) => {
+          if (layer.aspectRatio) return
+          onChange({ aspectRatio: event.currentTarget.naturalWidth / Math.max(1, event.currentTarget.naturalHeight) })
+        }}
+      />
       {selected && transformMode ? (
         <>
           <button className="layer-delete" type="button" onPointerDown={(event) => event.stopPropagation()} onClick={onDelete} title="이미지 삭제">
@@ -358,7 +391,19 @@ function SpeechBubbleItem({
     onInteractionEnd()
   }
 
-  const avatarNode = avatar ? <img className="speech-avatar" src={avatar} alt={`${speakerName} 프로필`} draggable={false} /> : null
+  const avatarNode = avatar ? (
+    <span className="speech-avatar">
+      <img
+        src={avatar}
+        alt={`${speakerName} 프로필`}
+        draggable={false}
+        style={{
+          objectPosition: `${profile?.avatarX ?? 50}% ${profile?.avatarY ?? 50}%`,
+          transform: `translate(-50%, -50%) scale(${(profile?.avatarScale ?? 100) / 100})`,
+        }}
+      />
+    </span>
+  ) : null
   const cardNode = (
     <div className="speech-card">
       {speakerName ? <strong>{speakerName}</strong> : null}
@@ -418,6 +463,7 @@ function SpeechBubbleItem({
 function DropPage({
   page,
   selected,
+  multiSelected,
   document,
   children,
   selectedImageId,
@@ -436,12 +482,13 @@ function DropPage({
 }: {
   page: number
   selected: boolean
+  multiSelected: boolean
   document: BookDocument
   children: ReactNode
   selectedImageId: string
   selectedBubbleId: string
   transformMode: boolean
-  onSelectPage: () => void
+  onSelectPage: (additive: boolean) => void
   onSelectImage: (id: string) => void
   onSelectBubble: (id: string) => void
   onAddImage: (file: File) => void
@@ -475,14 +522,15 @@ function DropPage({
 
   return (
     <article
-      className={`book-page texture-${options.pageTexture}${selected ? " is-selected" : ""}`}
+      className={`book-page texture-${options.pageTexture}${selected ? " is-selected" : ""}${multiSelected ? " is-multi-selected" : ""}`}
       style={style}
       data-book-page
       data-page-index={page}
-      onClick={onSelectPage}
+      onClick={(event: MouseEvent<HTMLElement>) => onSelectPage(event.ctrlKey || event.metaKey)}
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
     >
+      {multiSelected ? <span className="page-selection-badge"><Check aria-hidden="true" /></span> : null}
       {children}
       {document.images
         .filter((image) => image.page === page)
@@ -547,11 +595,12 @@ export function BookCanvas(props: Props) {
         <DropPage
           page={0}
           selected={props.selectedPage === 0}
+          multiSelected={props.selectedPages.length > 1 && props.selectedPages.includes(0)}
           document={props.document}
           selectedImageId={props.selectedImageId}
           selectedBubbleId={props.selectedBubbleId}
           transformMode={props.transformMode}
-          onSelectPage={() => props.onSelectPage(0)}
+          onSelectPage={(additive) => props.onSelectPage(0, additive)}
           onSelectImage={props.onSelectImage}
           onSelectBubble={props.onSelectBubble}
           onAddImage={(file) => props.onAddImage(file, 0)}
@@ -580,11 +629,12 @@ export function BookCanvas(props: Props) {
             key={`page-${pageNumber}`}
             page={pageNumber}
             selected={props.selectedPage === pageNumber}
+            multiSelected={props.selectedPages.length > 1 && props.selectedPages.includes(pageNumber)}
             document={props.document}
             selectedImageId={props.selectedImageId}
             selectedBubbleId={props.selectedBubbleId}
             transformMode={props.transformMode}
-            onSelectPage={() => props.onSelectPage(pageNumber)}
+            onSelectPage={(additive) => props.onSelectPage(pageNumber, additive)}
             onSelectImage={props.onSelectImage}
             onSelectBubble={props.onSelectBubble}
             onAddImage={(file) => props.onAddImage(file, pageNumber)}
@@ -599,6 +649,7 @@ export function BookCanvas(props: Props) {
               document={props.document}
               page={page}
               editing={editingPage === pageNumber}
+              onSelectPage={(additive) => props.onSelectPage(pageNumber, additive)}
               onStartEditing={() => {
                 props.onSelectPage(pageNumber)
                 setEditingPage(pageNumber)

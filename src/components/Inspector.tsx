@@ -20,8 +20,9 @@ import {
   X,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { ChangeEvent, ReactNode } from "react"
+import type { ChangeEvent, CSSProperties, PointerEvent, ReactNode } from "react"
 import { DEFAULT_OPTIONS, THEMES } from "../data/themes"
+import { fitImageToPage } from "../lib/image"
 import type {
   BookDocument,
   BookOptions,
@@ -149,6 +150,104 @@ function ColorInput({ value, onChange, label }: { value: string; onChange: (valu
   )
 }
 
+function avatarStyle(member: MemberProfile): CSSProperties {
+  const scale = member.avatarScale ?? 100
+  return {
+    objectPosition: `${member.avatarX ?? 50}% ${member.avatarY ?? 50}%`,
+    transform: `translate(-50%, -50%) scale(${scale / 100})`,
+  }
+}
+
+function clampAvatarPosition(value: number) {
+  return Math.max(0, Math.min(100, value))
+}
+
+function AvatarCropper({ member, onChange }: { member: MemberProfile; onChange: (patch: Partial<MemberProfile>) => void }) {
+  const [position, setPosition] = useState({ x: member.avatarX ?? 50, y: member.avatarY ?? 50 })
+  const drag = useRef<{
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    rect: DOMRect
+    position: { x: number; y: number }
+  } | null>(null)
+
+  useEffect(() => {
+    if (drag.current) return
+    setPosition({ x: member.avatarX ?? 50, y: member.avatarY ?? 50 })
+  }, [member.avatarX, member.avatarY])
+
+  const start = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    drag.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: position.x,
+      originY: position.y,
+      rect: event.currentTarget.getBoundingClientRect(),
+      position,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const move = (event: PointerEvent<HTMLDivElement>) => {
+    const current = drag.current
+    if (!current) return
+    const scale = member.avatarScale ?? 100
+    const next = {
+      x: clampAvatarPosition(current.originX - ((event.clientX - current.startX) / current.rect.width) * (10000 / scale)),
+      y: clampAvatarPosition(current.originY - ((event.clientY - current.startY) / current.rect.height) * (10000 / scale)),
+    }
+    current.position = next
+    setPosition(next)
+  }
+
+  const end = (event: PointerEvent<HTMLDivElement>) => {
+    const current = drag.current
+    if (!current) return
+    drag.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    onChange({ avatarX: current.position.x, avatarY: current.position.y })
+  }
+
+  const scale = member.avatarScale ?? 100
+  return (
+    <div className="avatar-crop-controls">
+      <div
+        className="avatar-cropper"
+        onPointerDown={start}
+        onPointerMove={move}
+        onPointerUp={end}
+        onPointerCancel={end}
+      >
+        <img
+          src={member.avatar}
+          alt="프로필 사진 자르기 미리보기"
+          draggable={false}
+          style={{ ...avatarStyle(member), objectPosition: `${position.x}% ${position.y}%` }}
+        />
+        <span className="avatar-crop-guide" aria-hidden="true" />
+      </div>
+      <RangeField
+        label="사진 확대"
+        min={100}
+        max={300}
+        value={scale}
+        suffix="%"
+        onChange={(avatarScale) => onChange({
+          avatarScale,
+          avatarX: position.x,
+          avatarY: position.y,
+        })}
+      />
+      <button className="secondary-button" type="button" onClick={() => onChange({ avatarScale: 100, avatarX: 50, avatarY: 50 })}>
+        <RotateCcw aria-hidden="true" /> 위치 초기화
+      </button>
+    </div>
+  )
+}
+
 function Section({ title, children, open = true, className = "" }: { title: string; children: ReactNode; open?: boolean; className?: string }) {
   return (
     <details className={`inspector-section${className ? ` ${className}` : ""}`} open={open}>
@@ -210,13 +309,37 @@ function ManuscriptPanel(props: Props) {
                 title={`보조색 ${index + 1}`}
               />
             ))}
-            <button className={hasSelectionMark("highlight", `${options.accentColors[0]}88`) ? "is-active" : ""} type="button" onClick={() => addSelectionMark("highlight", `${options.accentColors[0]}88`)} title="형광펜">
+            <button
+              className={`highlight-button${hasSelectionMark("highlight", `${options.highlightColor}88`) ? " is-active" : ""}`}
+              style={{ "--highlight": options.highlightColor } as CSSProperties}
+              type="button"
+              onClick={() => addSelectionMark("highlight", `${options.highlightColor}88`)}
+              title="형광펜"
+            >
               <Highlighter aria-hidden="true" />
             </button>
             <button type="button" onClick={props.onClearMarks} title="수동 서식 지우기">
               <RotateCcw aria-hidden="true" />
             </button>
           </div>
+        </Section>
+
+        <Section title="보조색과 형광펜" open={false}>
+          <div className="three-column-fields">
+            {options.accentColors.map((color, index) => (
+              <ColorInput
+                key={`${color}-${index}`}
+                label={`보조색 ${index + 1}`}
+                value={color}
+                onChange={(value) => {
+                  const accentColors = [...options.accentColors] as [string, string, string]
+                  accentColors[index] = value
+                  props.onPatchOptions({ accentColors })
+                }}
+              />
+            ))}
+          </div>
+          <ColorInput label="형광펜" value={options.highlightColor} onChange={(highlightColor) => props.onPatchOptions({ highlightColor })} />
         </Section>
 
         <Section title="스마트 하이라이트" open={false}>
@@ -316,22 +439,6 @@ function ThemePanel(props: Props) {
             <Save aria-hidden="true" /> 저장
           </button>
         </Section>
-        <Section title="보조색 3개" open={false}>
-          <div className="three-column-fields">
-            {props.document.options.accentColors.map((color, index) => (
-              <ColorInput
-                key={`${color}-${index}`}
-                label={`색 ${index + 1}`}
-                value={color}
-                onChange={(value) => {
-                  const accentColors = [...props.document.options.accentColors] as [string, string, string]
-                  accentColors[index] = value
-                  props.onPatchOptions({ accentColors })
-                }}
-              />
-            ))}
-          </div>
-        </Section>
       </div>
     </>
   )
@@ -352,9 +459,12 @@ function ImagePanel(props: Props) {
         {image ? (
           <Section title={image.name}>
             <p className="shortcut-note"><kbd>Ctrl</kbd> + <kbd>T</kbd>로 캔버스 변형 핸들을 켤 수 있습니다.</p>
-            <RangeField label="가로 위치" min={-50} max={100} value={image.x} suffix="%" onChange={(x) => props.onPatchImage({ x })} />
-            <RangeField label="세로 위치" min={-30} max={100} value={image.y} suffix="%" onChange={(y) => props.onPatchImage({ y })} />
-            <RangeField label="크기" min={8} max={120} value={image.width} suffix="%" onChange={(width) => props.onPatchImage({ width })} />
+            <button className="primary-button" type="button" onClick={() => props.onPatchImage(fitImageToPage(image.aspectRatio ?? 1))}>
+              <ImagePlus aria-hidden="true" /> 페이지 가득 채우기
+            </button>
+            <RangeField label="가로 위치" min={-400} max={100} value={image.x} suffix="%" onChange={(x) => props.onPatchImage({ x })} />
+            <RangeField label="세로 위치" min={-300} max={100} value={image.y} suffix="%" onChange={(y) => props.onPatchImage({ y })} />
+            <RangeField label="크기" min={8} max={500} value={image.width} suffix="%" onChange={(width) => props.onPatchImage({ width })} />
             <RangeField label="회전" min={-180} max={180} value={image.rotation} suffix="°" onChange={(rotation) => props.onPatchImage({ rotation })} />
             <RangeField label="투명도" min={0.05} max={1} step={0.05} value={image.opacity} onChange={(opacity) => props.onPatchImage({ opacity })} />
             <button className="danger-button" type="button" onClick={props.onDeleteImage}>
@@ -419,7 +529,7 @@ function DialoguePanel(props: Props) {
                 onClick={() => setSelectedMemberId(member.id)}
               >
                 <span className="profile-avatar">
-                  {member.avatar ? <img src={member.avatar} alt="" /> : <UserRound aria-hidden="true" />}
+                  {member.avatar ? <img src={member.avatar} alt="" style={avatarStyle(member)} /> : <UserRound aria-hidden="true" />}
                 </span>
                 <strong>{member.name}</strong>
                 <i style={{ background: member.bubbleColor }} />
@@ -446,9 +556,12 @@ function DialoguePanel(props: Props) {
               <input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && props.onSetMemberAvatar(selectedMember.id, event.target.files[0])} />
             </label>
             {selectedMember.avatar ? (
-              <button className="secondary-button" type="button" onClick={() => props.onDeleteMemberAvatar(selectedMember.id)}>
-                <Trash2 aria-hidden="true" /> 사진만 삭제
-              </button>
+              <>
+                <AvatarCropper member={selectedMember} onChange={(patch) => props.onPatchMember(selectedMember.id, patch)} />
+                <button className="secondary-button" type="button" onClick={() => props.onDeleteMemberAvatar(selectedMember.id)}>
+                  <Trash2 aria-hidden="true" /> 사진만 삭제
+                </button>
+              </>
             ) : null}
             <button className="danger-button" type="button" onClick={() => props.onDeleteMember(selectedMember.id)}>
               <Trash2 aria-hidden="true" /> 멤버 삭제

@@ -5,37 +5,68 @@ const PAGE_RATIO = 1.414
 export function paginateText(text: string, options: BookOptions): PageSlice[] {
   if (!text) return [{ text: "", start: 0, end: 0 }]
   const contentWidth = Math.max(120, options.pageWidth - options.paddingX * 2)
-  const contentHeight = Math.max(160, options.pageWidth * PAGE_RATIO - options.paddingY * 2 - 42)
+  const pageHeight = options.pageWidth * PAGE_RATIO
+  const contentHeight = Math.max(160, pageHeight - options.paddingY - pageHeight * 0.11)
   const lineHeight = options.fontSize * options.lineHeight
-  const lineUnits = contentWidth / (options.fontSize * options.scaleX)
-  const pageUnits = Math.max(12, Math.floor(contentHeight / lineHeight) * lineUnits)
+  const lineUnits = Math.max(6, contentWidth / (options.fontSize * options.scaleX))
   const slices: PageSlice[] = []
   let start = 0
-  let used = 0
-  let lineUsed = 0
 
-  Array.from(text).forEach((character, characterIndex) => {
-    const unit = character === " " ? 0.36 : /[\x00-\x7F]/.test(character) ? 0.58 : 1
-    if (character === "\n") {
-      used += Math.max(1, lineUnits - lineUsed)
-      lineUsed = 0
-      if (text[characterIndex - 1] === "\n") used += options.paragraphSpacing / lineHeight * lineUnits
-    } else {
-      used += unit + Math.max(0, options.letterSpacing / options.fontSize)
-      lineUsed += unit
-      if (lineUsed >= lineUnits) lineUsed %= lineUnits
+  while (start < text.length) {
+    let height = lineHeight
+    let lineUsed = 0
+    let lastBreak = start
+    let index = start
+
+    while (index < text.length) {
+      const character = text[index]
+      const paragraphBreak = character === "\n" && text[index + 1] === "\n"
+      const nextHeight = paragraphBreak
+        ? height + lineHeight + options.paragraphSpacing
+        : character === "\n"
+          ? height + lineHeight
+          : lineUsed + characterUnits(character, options) > lineUnits
+            ? height + lineHeight
+            : height
+      if (nextHeight > contentHeight) break
+
+      height = nextHeight
+      if (paragraphBreak) {
+        lineUsed = 0
+        index += 2
+        lastBreak = index
+        continue
+      }
+      if (character === "\n") {
+        lineUsed = 0
+        index += 1
+        lastBreak = index
+        continue
+      }
+
+      const unit = characterUnits(character, options)
+      lineUsed = lineUsed + unit > lineUnits ? unit : lineUsed + unit
+      index += 1
+      if (/\s/.test(character)) {
+        lastBreak = index
+      }
     }
-    if (used < pageUnits || characterIndex === text.length - 1) return
-    const naturalBreak = text.lastIndexOf("\n", characterIndex)
-    const end = naturalBreak > start + (characterIndex - start) * 0.72 ? naturalBreak + 1 : characterIndex + 1
+
+    if (index >= text.length) {
+      slices.push({ text: text.slice(start), start, end: text.length })
+      break
+    }
+    const end = lastBreak > start && index - lastBreak <= 2 ? lastBreak : Math.max(start + 1, index)
     slices.push({ text: text.slice(start, end), start, end })
     start = end
-    used = Math.max(0, characterIndex + 1 - end)
-    lineUsed = used
-  })
+  }
 
-  if (start < text.length) slices.push({ text: text.slice(start), start, end: text.length })
   return slices.length ? slices : [{ text: "", start: 0, end: 0 }]
+}
+
+function characterUnits(character: string, options: BookOptions) {
+  const base = character === " " ? 0.36 : /[\x00-\x7F]/.test(character) ? 0.58 : 1
+  return base + Math.max(0, options.letterSpacing / options.fontSize)
 }
 
 type TextStyle = {

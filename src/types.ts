@@ -27,12 +27,16 @@ export type ImageLayer = {
   rotation: number
   opacity: number
   zIndex: number
+  aspectRatio?: number
 }
 
 export type MemberProfile = {
   id: string
   name: string
   avatar: string
+  avatarScale: number
+  avatarX: number
+  avatarY: number
   bubbleColor: string
   textColor: string
 }
@@ -82,6 +86,7 @@ export type BookOptions = {
   bracketColor: string
   bracketItalic: boolean
   accentColors: [string, string, string]
+  highlightColor: string
   coverMode: CoverMode
   coverTitle: string
   coverSubtitle: string

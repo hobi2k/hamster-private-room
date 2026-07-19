@@ -1,4 +1,4 @@
-import { Check, House, Menu, MousePointer2, Save } from "lucide-react"
+import { Check, House, Menu, MousePointer2, Save, Trash2, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { BookCanvas } from "./components/BookCanvas"
 import { HamsterMascot } from "./components/HamsterMascot"
@@ -7,6 +7,7 @@ import { Inspector } from "./components/Inspector"
 import { ToolRail } from "./components/ToolRail"
 import { DEFAULT_OPTIONS } from "./data/themes"
 import { copyBookPage, exportBook } from "./lib/export"
+import { fitImageToPage } from "./lib/image"
 import { paginateText } from "./lib/pagination"
 import type {
   BookDocument,
@@ -59,7 +60,7 @@ function loadDocument() {
       ...parsed,
       options: { ...DEFAULT_OPTIONS, ...parsed.options },
       images: Array.isArray(parsed.images) ? parsed.images : [],
-      members: Array.isArray(parsed.members) ? parsed.members : [],
+      members: normalizeMembers(parsed.members),
       speechBubbles: Array.isArray(parsed.speechBubbles) ? parsed.speechBubbles : [],
       marks: Array.isArray(parsed.marks) ? parsed.marks : [],
       footers: parsed.footers ?? {},
@@ -67,6 +68,16 @@ function loadDocument() {
   } catch {
     return createDocument()
   }
+}
+
+function normalizeMembers(members: BookDocument["members"] | undefined) {
+  if (!Array.isArray(members)) return []
+  return members.map((member) => ({
+    ...member,
+    avatarScale: member.avatarScale ?? 100,
+    avatarX: member.avatarX ?? 50,
+    avatarY: member.avatarY ?? 50,
+  }))
 }
 
 function loadPresets() {
@@ -103,6 +114,36 @@ async function imageFileToDataUrl(file: File) {
   }
 }
 
+function imageAspectRatio(src: string) {
+  return new Promise<number>((resolve) => {
+    const image = new Image()
+    image.addEventListener("load", () => resolve(image.naturalWidth / Math.max(1, image.naturalHeight)), { once: true })
+    image.addEventListener("error", () => resolve(1), { once: true })
+    image.src = src
+  })
+}
+
+function removeBodyRanges(documentState: BookDocument, ranges: Array<{ start: number; end: number }>) {
+  const body = ranges.reduceRight((text, range) => `${text.slice(0, range.start)}${text.slice(range.end)}`, documentState.body)
+  const mapOffset = (offset: number) => offset - ranges.reduce((removed, range) => removed + Math.max(0, Math.min(offset, range.end) - range.start), 0)
+  const marks = documentState.marks.flatMap((mark) => {
+    const segments = ranges.reduce<Array<{ start: number; end: number }>>((current, range) => current.flatMap((segment) => {
+      if (range.end <= segment.start || range.start >= segment.end) return segment
+      return [
+        { start: segment.start, end: Math.min(segment.end, range.start) },
+        { start: Math.max(segment.start, range.end), end: segment.end },
+      ].filter((part) => part.start < part.end)
+    }), [{ start: mark.start, end: mark.end }])
+    return segments.map((segment, index) => ({
+      ...mark,
+      id: index ? crypto.randomUUID() : mark.id,
+      start: mapOffset(segment.start),
+      end: mapOffset(segment.end),
+    }))
+  })
+  return { body, marks }
+}
+
 function downloadBookFile(documentState: BookDocument) {
   const link = document.createElement("a")
   const safeTitle = documentState.title.replace(/[\\/:*?"<>|]/g, "-") || "hamster-book"
@@ -118,6 +159,7 @@ export default function App() {
   const [hasSavedDraft, setHasSavedDraft] = useState(() => Boolean(localStorage.getItem(STORAGE_KEY)))
   const [activeTab, setActiveTab] = useState<EditorTab>("manuscript")
   const [selectedPage, setSelectedPage] = useState(documentState.options.coverMode === "none" ? 1 : 0)
+  const [selectedPages, setSelectedPages] = useState(() => [documentState.options.coverMode === "none" ? 1 : 0])
   const [selectedImageId, setSelectedImageId] = useState("")
   const [selectedBubbleId, setSelectedBubbleId] = useState("")
   const [textSelection, setTextSelection] = useState<TextSelection | null>(null)
@@ -219,9 +261,43 @@ export default function App() {
   const selectedBubble = documentState.speechBubbles.find((bubble) => bubble.id === selectedBubbleId) ?? null
 
   useEffect(() => {
-    if (selectedPage > maxPage) setSelectedPage(maxPage)
-    if (selectedPage === 0 && documentState.options.coverMode === "none") setSelectedPage(1)
+    const fallback = selectedPage > maxPage || (selectedPage === 0 && documentState.options.coverMode === "none") ? Math.max(1, maxPage) : selectedPage
+    if (fallback !== selectedPage) setSelectedPage(fallback)
+    setSelectedPages((current) => {
+      const valid = current.filter((page) => page <= maxPage && (page !== 0 || documentState.options.coverMode !== "none"))
+      if (valid.length && valid.length === current.length) return current
+      return valid.length ? valid : [fallback]
+    })
   }, [documentState.options.coverMode, maxPage, selectedPage])
+
+  const deleteSelectedPages = useCallback(() => {
+    const pageNumbers = [...selectedPages].sort((left, right) => left - right)
+    if (pageNumbers.length < 2) return
+    const contentPages = pageNumbers.filter((page) => page > 0)
+    const ranges = contentPages.map((page) => pages[page - 1]).filter(Boolean).map((page) => ({ start: page.start, end: page.end }))
+    const removed = new Set(pageNumbers)
+    const remapPage = (page: number) => page === 0 ? 0 : page - contentPages.filter((deleted) => deleted < page).length
+    commit((current) => {
+      const text = removeBodyRanges(current, ranges)
+      return {
+        ...current,
+        ...text,
+        options: pageNumbers.includes(0) ? { ...current.options, coverMode: "none" } : current.options,
+        images: current.images.filter((image) => !removed.has(image.page)).map((image) => ({ ...image, page: remapPage(image.page) })),
+        speechBubbles: current.speechBubbles.filter((bubble) => !removed.has(bubble.page)).map((bubble) => ({ ...bubble, page: remapPage(bubble.page) })),
+        footers: Object.fromEntries(Object.entries(current.footers)
+          .filter(([page]) => !removed.has(Number(page)))
+          .map(([page, footer]) => [remapPage(Number(page)), footer])),
+      }
+    })
+    const nextPage = Math.min(contentPages[0] ?? 1, Math.max(1, pages.length - contentPages.length))
+    setSelectedPage(nextPage)
+    setSelectedPages([nextPage])
+    setSelectedImageId("")
+    setSelectedBubbleId("")
+    setTextSelection(null)
+    notify(`${pageNumbers.length}개 페이지를 지웠어요. 실행 취소로 되돌릴 수 있어요.`, "success")
+  }, [commit, notify, pages, selectedPages])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -243,6 +319,11 @@ export default function App() {
         return
       }
       const target = event.target as HTMLElement
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedPages.length > 1 && !target.closest("input, textarea, [contenteditable]")) {
+        event.preventDefault()
+        deleteSelectedPages()
+        return
+      }
       if ((event.key === "Delete" || event.key === "Backspace") && selectedImageId && !target.closest("input, textarea, [contenteditable]")) {
         event.preventDefault()
         commit((current) => ({ ...current, images: current.images.filter((image) => image.id !== selectedImageId) }))
@@ -257,7 +338,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [commit, redo, selectedBubbleId, selectedImageId, undo])
+  }, [commit, deleteSelectedPages, redo, selectedBubbleId, selectedImageId, selectedPages.length, undo])
 
   const patchOptions = (patch: Partial<BookOptions>) => {
     commit((current) => ({ ...current, options: { ...current.options, ...patch } }))
@@ -285,6 +366,8 @@ export default function App() {
       notify("이미지를 읽지 못했어요.", "warn")
       return
     }
+    const aspectRatio = await imageAspectRatio(src)
+    const fitted = fitImageToPage(aspectRatio)
     const id = crypto.randomUUID()
     commit((current) => ({
       ...current,
@@ -295,12 +378,10 @@ export default function App() {
           page,
           src,
           name: file.name,
-          x: 18,
-          y: 20,
-          width: 48,
-          rotation: 0,
+          ...fitted,
           opacity: 1,
           zIndex: Math.max(0, ...current.images.map((image) => image.zIndex)) + 1,
+          aspectRatio,
         },
       ],
     }))
@@ -338,6 +419,9 @@ export default function App() {
           id,
           name: `멤버 ${current.members.length + 1}`,
           avatar: "",
+          avatarScale: 100,
+          avatarX: 50,
+          avatarY: 50,
           bubbleColor: colors[current.members.length % colors.length],
           textColor: "#292725",
         },
@@ -359,11 +443,11 @@ export default function App() {
       notify("프로필 사진을 읽지 못했어요.", "warn")
       return
     }
-    patchMember(id, { avatar })
+    patchMember(id, { avatar, avatarScale: 100, avatarX: 50, avatarY: 50 })
   }
 
   const deleteMemberAvatar = (id: string) => {
-    patchMember(id, { avatar: "" })
+    patchMember(id, { avatar: "", avatarScale: 100, avatarX: 50, avatarY: 50 })
     notify("프로필 사진을 지웠어요.")
   }
 
@@ -541,7 +625,7 @@ export default function App() {
         ...parsed,
         options: { ...DEFAULT_OPTIONS, ...parsed.options },
         images: Array.isArray(parsed.images) ? parsed.images : [],
-        members: Array.isArray(parsed.members) ? parsed.members : [],
+        members: normalizeMembers(parsed.members),
         speechBubbles: Array.isArray(parsed.speechBubbles) ? parsed.speechBubbles : [],
         marks: Array.isArray(parsed.marks) ? parsed.marks : [],
         footers: parsed.footers ?? {},
@@ -550,6 +634,7 @@ export default function App() {
       setSelectedBubbleId("")
       setTextSelection(null)
       setSelectedPage(parsed.options.coverMode === "none" ? 1 : 0)
+      setSelectedPages([parsed.options.coverMode === "none" ? 1 : 0])
       setHasSavedDraft(true)
       setScreen("editor")
       notify("작업 파일을 불러왔어요.", "success")
@@ -591,9 +676,21 @@ export default function App() {
     setMobilePanelOpen((open) => tab === activeTab ? !open : true)
   }
 
-  const selectPage = (page: number) => {
+  const selectPage = (page: number, additive = false) => {
+    if (additive) {
+      const next = selectedPages.includes(page)
+        ? selectedPages.length === 1 ? selectedPages : selectedPages.filter((selected) => selected !== page)
+        : [...selectedPages, page].sort((left, right) => left - right)
+      setSelectedPages(next)
+      setSelectedPage(next.includes(page) ? page : next.at(-1) ?? page)
+      setSelectedImageId("")
+      setSelectedBubbleId("")
+      setTextSelection(null)
+      return
+    }
     if (page !== selectedPage || page === 0) setTextSelection(null)
     setSelectedPage(page)
+    setSelectedPages([page])
     const selectedBelongsElsewhere = selectedImage && selectedImage.page !== page
     if (selectedBelongsElsewhere) setSelectedImageId("")
     const bubbleBelongsElsewhere = selectedBubble && selectedBubble.page !== page
@@ -612,6 +709,7 @@ export default function App() {
     future.current = []
     setDocumentState(next)
     setSelectedPage(0)
+    setSelectedPages([0])
     setSelectedImageId("")
     setSelectedBubbleId("")
     setTextSelection(null)
@@ -625,7 +723,9 @@ export default function App() {
     if (!hasSavedDraft) return
     const saved = loadDocument()
     setDocumentState(saved)
-    setSelectedPage(saved.options.coverMode === "none" ? 1 : 0)
+    const firstPage = saved.options.coverMode === "none" ? 1 : 0
+    setSelectedPage(firstPage)
+    setSelectedPages([firstPage])
     setSelectedImageId("")
     setSelectedBubbleId("")
     setTextSelection(null)
@@ -712,9 +812,21 @@ export default function App() {
           <button className="editor-home icon-button" type="button" onClick={returnHome} title="서재로 돌아가기">
             <House aria-hidden="true" />
           </button>
-          <div className="document-heading">
-            <strong>{documentState.title || "제목 없는 책"}</strong>
-          </div>
+          {selectedPages.length > 1 ? (
+            <div className="page-selection-bar" role="status">
+              <strong>{selectedPages.length}쪽 선택</strong>
+              <button className="selection-delete" type="button" onClick={deleteSelectedPages} title="선택 페이지 삭제">
+                <Trash2 aria-hidden="true" /> <span>선택 페이지 삭제</span>
+              </button>
+              <button className="icon-button" type="button" onClick={() => setSelectedPages([selectedPage])} title="다중 선택 해제">
+                <X aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <div className="document-heading">
+              <strong>{documentState.title || "제목 없는 책"}</strong>
+            </div>
+          )}
           <div className="workspace-status">
             <span>{pageCount}장</span>
             <span className={`save-state is-${saveStatus}`}>
@@ -728,6 +840,7 @@ export default function App() {
             document={documentState}
             pages={pages}
             selectedPage={selectedPage}
+            selectedPages={selectedPages}
             selectedImageId={selectedImageId}
             selectedBubbleId={selectedBubbleId}
             transformMode={transformMode}

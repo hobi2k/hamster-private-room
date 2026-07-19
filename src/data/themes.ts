@@ -21,6 +21,7 @@ export const DEFAULT_OPTIONS: BookOptions = {
   bracketColor: "#18776d",
   bracketItalic: true,
   accentColors: ["#f4cc55", "#9fd9cf", "#f3a6b5"],
+  highlightColor: "#f4cc55",
   coverMode: "image-text",
   coverTitle: "작고 사적인 방",
   coverSubtitle: "오늘의 문장과 장면을 엮습니다",
@@ -42,6 +43,7 @@ export const THEMES: ThemePreset[] = [
       bracketColor: "#18776d",
       pageTexture: "paper",
       accentColors: ["#f4cc55", "#9fd9cf", "#f3a6b5"],
+      highlightColor: "#f4cc55",
     },
   },
   {
@@ -58,6 +60,7 @@ export const THEMES: ThemePreset[] = [
       bracketColor: "#8bc7c9",
       pageTexture: "night",
       accentColors: ["#e7b866", "#77bfc2", "#d68798"],
+      highlightColor: "#e7b866",
     },
   },
   {
@@ -74,6 +77,7 @@ export const THEMES: ThemePreset[] = [
       bracketColor: "#27636b",
       pageTexture: "fiber",
       accentColors: ["#f2c84b", "#9fd6c7", "#ed9db0"],
+      highlightColor: "#f2c84b",
     },
   },
   {
@@ -90,6 +94,7 @@ export const THEMES: ThemePreset[] = [
       bracketColor: "#2f7361",
       pageTexture: "grid",
       accentColors: ["#f0c84c", "#88cbb8", "#e79782"],
+      highlightColor: "#f0c84c",
     },
   },
 ]
