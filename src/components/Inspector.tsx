@@ -188,7 +188,12 @@ function ManuscriptPanel(props: Props) {
           </Field>
         </Section>
         <Section title="선택 글자 꾸미기">
-          <div className="selection-toolbar" aria-label="선택한 글자 꾸미기">
+          <div
+            className="selection-toolbar"
+            aria-label="선택한 글자 꾸미기"
+            data-preserve-page-selection
+            onPointerDown={(event) => event.preventDefault()}
+          >
             <button className={hasSelectionMark("bold", "700") ? "is-active" : ""} type="button" onClick={() => addSelectionMark("bold", "700")} title="굵게">
               <Bold aria-hidden="true" />
             </button>

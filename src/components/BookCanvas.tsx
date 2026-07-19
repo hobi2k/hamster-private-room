@@ -117,6 +117,7 @@ function PageTextEditor({
     if (!editing) return
     const finishOutside = (event: globalThis.PointerEvent) => {
       if (event.target instanceof Node && editorRef.current?.contains(event.target)) return
+      if (event.target instanceof Element && event.target.closest("[data-preserve-page-selection]")) return
       finishEditing()
     }
     window.document.addEventListener("pointerdown", finishOutside, true)
