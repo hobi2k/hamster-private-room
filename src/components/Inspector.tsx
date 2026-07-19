@@ -368,6 +368,16 @@ function ManuscriptPanel(props: Props) {
           <Field label="표지 제목">
             <input value={options.coverTitle} onChange={(event) => props.onPatchOptions({ coverTitle: event.target.value })} />
           </Field>
+          <div className="two-column-fields">
+            <ColorInput
+              label="표지 제목색"
+              value={options.coverTitleColor || (options.coverImage && options.coverMode === "image-text" ? "#ffffff" : options.textColor)}
+              onChange={(coverTitleColor) => props.onPatchOptions({ coverTitleColor })}
+            />
+            <button className="secondary-button" type="button" onClick={() => props.onPatchOptions({ coverTitleColor: "" })}>
+              <RotateCcw aria-hidden="true" /> 자동색
+            </button>
+          </div>
           <Field label="표지 부제">
             <input value={options.coverSubtitle} onChange={(event) => props.onPatchOptions({ coverSubtitle: event.target.value })} />
           </Field>

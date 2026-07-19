@@ -636,7 +636,9 @@ export function BookCanvas(props: Props) {
           ) : null}
           {coverHasText ? (
             <div className={coverHasImage && props.document.options.coverImage ? "cover-copy is-over-image" : "cover-copy"}>
-              <h1>{props.document.options.coverTitle || props.document.title}</h1>
+              <h1 style={props.document.options.coverTitleColor ? { color: props.document.options.coverTitleColor } : undefined}>
+                {props.document.options.coverTitle || props.document.title}
+              </h1>
               <p>{props.document.options.coverSubtitle}</p>
             </div>
           ) : null}

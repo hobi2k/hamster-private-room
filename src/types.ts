@@ -90,6 +90,7 @@ export type BookOptions = {
   highlightColor: string
   coverMode: CoverMode
   coverTitle: string
+  coverTitleColor: string
   coverSubtitle: string
   coverImage: string
 }
