@@ -248,7 +248,7 @@ function ImageItem({
         top: `${layer.y}%`,
         width: `${layer.width}%`,
         opacity: layer.opacity,
-        zIndex: layer.zIndex,
+        zIndex: layer.zIndex + 10,
         transform: `rotate(${layer.rotation}deg)`,
       }}
       onPointerDown={(event) => start(event, "move")}
@@ -393,7 +393,7 @@ function SpeechBubbleItem({
         left: `${bubble.x}%`,
         top: `${bubble.y}%`,
         width: `${bubble.width}%`,
-        zIndex: bubble.zIndex,
+        zIndex: bubble.zIndex + 10,
         "--bubble-color": bubbleColor,
         "--bubble-text": textColor,
       } as CSSProperties}
