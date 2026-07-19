@@ -84,6 +84,7 @@ function PageTextEditor({
   const [draft, setDraft] = useState(page.text)
   const editorRef = useRef<HTMLTextAreaElement>(null)
   const dirty = useRef(false)
+  const finishTimer = useRef<number | null>(null)
 
   useEffect(() => {
     if (!editing) setDraft(page.text)
@@ -113,16 +114,24 @@ function PageTextEditor({
     }
   }, [draft, onChange, onFinishEditing, onInteractionEnd, page.end, page.start])
 
+  const scheduleFinishEditing = useCallback(() => {
+    if (finishTimer.current !== null) return
+    finishTimer.current = window.setTimeout(() => {
+      finishTimer.current = null
+      finishEditing()
+    })
+  }, [finishEditing])
+
   useEffect(() => {
     if (!editing) return
     const finishOutside = (event: globalThis.PointerEvent) => {
       if (event.target instanceof Node && editorRef.current?.contains(event.target)) return
       if (event.target instanceof Element && event.target.closest("[data-preserve-page-selection]")) return
-      finishEditing()
+      scheduleFinishEditing()
     }
     window.document.addEventListener("pointerdown", finishOutside, true)
     return () => window.document.removeEventListener("pointerdown", finishOutside, true)
-  }, [editing, finishEditing])
+  }, [editing, scheduleFinishEditing])
 
   if (editing) {
     return (
@@ -137,7 +146,7 @@ function PageTextEditor({
         }}
         onSelect={updateSelection}
         onKeyUp={updateSelection}
-        onBlur={finishEditing}
+        onBlur={scheduleFinishEditing}
         onClick={(event) => event.stopPropagation()}
         spellCheck={false}
         aria-label="페이지 본문 편집"
