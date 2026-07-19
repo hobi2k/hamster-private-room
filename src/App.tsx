@@ -6,7 +6,7 @@ import { HomeScreen } from "./components/HomeScreen"
 import { Inspector } from "./components/Inspector"
 import { ToolRail } from "./components/ToolRail"
 import { DEFAULT_OPTIONS } from "./data/themes"
-import { exportBook } from "./lib/export"
+import { copyBookPage, exportBook } from "./lib/export"
 import { paginateText } from "./lib/pagination"
 import type {
   BookDocument,
@@ -19,6 +19,7 @@ import type {
   MemberProfile,
   SpeechBubble,
   ThemePreset,
+  TextSelection,
   ToastState,
 } from "./types"
 
@@ -119,6 +120,7 @@ export default function App() {
   const [selectedPage, setSelectedPage] = useState(documentState.options.coverMode === "none" ? 1 : 0)
   const [selectedImageId, setSelectedImageId] = useState("")
   const [selectedBubbleId, setSelectedBubbleId] = useState("")
+  const [textSelection, setTextSelection] = useState<TextSelection | null>(null)
   const [transformMode, setTransformMode] = useState(true)
   const [customPresets, setCustomPresets] = useState(loadPresets)
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
@@ -128,6 +130,7 @@ export default function App() {
   const past = useRef<BookDocument[]>([])
   const future = useRef<BookDocument[]>([])
   const transientStart = useRef<BookDocument | null>(null)
+  const transientChanged = useRef(false)
   const documentRef = useRef(documentState)
   const [, refreshHistory] = useReducer((value: number) => value + 1, 0)
 
@@ -150,18 +153,26 @@ export default function App() {
   }, [])
 
   const updateTransient = useCallback((update: (current: BookDocument) => BookDocument) => {
+    transientChanged.current = true
     setDocumentState((current) => update(current))
   }, [])
 
   const beginTransient = useCallback(() => {
-    transientStart.current ??= documentRef.current
+    if (transientStart.current) return
+    transientStart.current = documentRef.current
+    transientChanged.current = false
   }, [])
 
   const endTransient = useCallback(() => {
     if (!transientStart.current) return
+    if (!transientChanged.current) {
+      transientStart.current = null
+      return
+    }
     past.current = [...past.current.slice(-79), transientStart.current]
     future.current = []
     transientStart.current = null
+    transientChanged.current = false
     refreshHistory()
   }, [])
 
@@ -250,6 +261,22 @@ export default function App() {
 
   const patchOptions = (patch: Partial<BookOptions>) => {
     commit((current) => ({ ...current, options: { ...current.options, ...patch } }))
+  }
+
+  const replacePageText = (start: number, end: number, text: string) => {
+    updateTransient((current) => {
+      if (current.body.slice(start, end) === text) return current
+      const delta = text.length - (end - start)
+      return {
+        ...current,
+        body: `${current.body.slice(0, start)}${text}${current.body.slice(end)}`,
+        marks: current.marks.flatMap((mark) => {
+          if (mark.end <= start) return mark
+          if (mark.start >= end) return { ...mark, start: mark.start + delta, end: mark.end + delta }
+          return []
+        }),
+      }
+    })
   }
 
   const addImage = async (file: File, page = selectedPage) => {
@@ -421,10 +448,13 @@ export default function App() {
       notify("본문에서 꾸밀 글자를 먼저 드래그해 주세요.", "warn")
       return
     }
-    commit((current) => ({
-      ...current,
-      marks: [...current.marks, { id: crypto.randomUUID(), start: Math.min(start, end), end: Math.max(start, end), kind, value }],
-    }))
+    const range = { start: Math.min(start, end), end: Math.max(start, end) }
+    commit((current) => {
+      const same = current.marks.some((mark) => mark.start === range.start && mark.end === range.end && mark.kind === kind && mark.value === value)
+      const marks = current.marks.filter((mark) => mark.start !== range.start || mark.end !== range.end || mark.kind !== kind)
+      if (same) return { ...current, marks }
+      return { ...current, marks: [...marks, { id: crypto.randomUUID(), ...range, kind, value }] }
+    })
   }
 
   const currentFooter = documentState.footers[selectedPage] ?? {
@@ -518,6 +548,7 @@ export default function App() {
       }))
       setSelectedImageId("")
       setSelectedBubbleId("")
+      setTextSelection(null)
       setSelectedPage(parsed.options.coverMode === "none" ? 1 : 0)
       setHasSavedDraft(true)
       setScreen("editor")
@@ -540,12 +571,28 @@ export default function App() {
     }
   }
 
+  const copySelectedPage = async () => {
+    setExporting(true)
+    notify("선택한 페이지를 복사하고 있어요.")
+    try {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+      await copyBookPage(selectedPage)
+      notify("페이지를 이미지로 복사했어요. 업로드 창에 붙여넣어 보세요.", "success")
+    } catch {
+      notify("이 브라우저에서는 이미지 복사가 허용되지 않았어요. HTTPS 페이지에서 다시 시도해 주세요.", "warn")
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const selectTool = (tab: EditorTab) => {
     setActiveTab(tab)
     setMobilePanelOpen((open) => tab === activeTab ? !open : true)
   }
 
   const selectPage = (page: number) => {
+    if (page !== selectedPage || page === 0) setTextSelection(null)
     setSelectedPage(page)
     const selectedBelongsElsewhere = selectedImage && selectedImage.page !== page
     if (selectedBelongsElsewhere) setSelectedImageId("")
@@ -567,6 +614,7 @@ export default function App() {
     setSelectedPage(0)
     setSelectedImageId("")
     setSelectedBubbleId("")
+    setTextSelection(null)
     setActiveTab("manuscript")
     setScreen("editor")
     notify("새 이불을 폈어요. 첫 문장을 적어볼까요?", "success")
@@ -580,6 +628,7 @@ export default function App() {
     setSelectedPage(saved.options.coverMode === "none" ? 1 : 0)
     setSelectedImageId("")
     setSelectedBubbleId("")
+    setTextSelection(null)
     setScreen("editor")
     notify("이어서 폭신하게 써 볼까요?", "success")
   }
@@ -622,11 +671,11 @@ export default function App() {
         selectedPage={selectedPage}
         selectedImage={selectedImage}
         selectedBubble={selectedBubble}
+        textSelection={textSelection}
         members={documentState.members}
         customPresets={customPresets}
         onClose={() => setMobilePanelOpen(false)}
         onSetTitle={(title) => commit((current) => ({ ...current, title }))}
-        onSetBody={(body) => commit((current) => ({ ...current, body }))}
         onPatchOptions={patchOptions}
         onApplyTheme={applyTheme}
         onSavePreset={savePreset}
@@ -649,6 +698,7 @@ export default function App() {
         onApplyFooterAll={applyFooterAll}
         onDeleteFooter={deleteFooter}
         onExport={runExport}
+        onCopyPage={copySelectedPage}
         onSaveTemporary={saveTemporary}
         onDownloadProject={() => downloadBookFile(documentState)}
         onImportProject={importProject}
@@ -697,6 +747,8 @@ export default function App() {
             onDeleteImage={deleteImage}
             onChangeBubble={(id, patch) => patchBubble(id, patch, true)}
             onDeleteBubble={deleteBubble}
+            onChangePageText={replacePageText}
+            onSelectText={setTextSelection}
             onInteractionStart={beginTransient}
             onInteractionEnd={endTransient}
           />

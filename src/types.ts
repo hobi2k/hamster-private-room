@@ -11,6 +11,11 @@ export type TextMark = {
   value: string
 }
 
+export type TextSelection = {
+  start: number
+  end: number
+}
+
 export type ImageLayer = {
   id: string
   page: number

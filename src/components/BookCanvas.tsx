@@ -1,8 +1,8 @@
 import { RotateCw, Trash2 } from "lucide-react"
-import { useRef } from "react"
-import type { CSSProperties, DragEvent, PointerEvent, ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import type { CSSProperties, DragEvent, FocusEvent, FormEvent, PointerEvent, ReactNode } from "react"
 import { decoratePage } from "../lib/pagination"
-import type { BookDocument, ImageLayer, MemberProfile, PageSlice, SpeechBubble } from "../types"
+import type { BookDocument, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
   document: BookDocument
@@ -19,6 +19,8 @@ type Props = {
   onDeleteImage: (id: string) => void
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onDeleteBubble: (id: string) => void
+  onChangePageText: (start: number, end: number, text: string) => void
+  onSelectText: (selection: TextSelection) => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
 }
@@ -56,6 +58,94 @@ function TextContent({ document, page }: { document: BookDocument; page: PageSli
       )
     })
   })
+}
+
+function PageTextEditor({
+  document,
+  page,
+  editing,
+  onStartEditing,
+  onFinishEditing,
+  onChange,
+  onSelectText,
+  onInteractionStart,
+  onInteractionEnd,
+}: {
+  document: BookDocument
+  page: PageSlice
+  editing: boolean
+  onStartEditing: () => void
+  onFinishEditing: () => void
+  onChange: (start: number, end: number, text: string) => void
+  onSelectText: (selection: TextSelection) => void
+  onInteractionStart: () => void
+  onInteractionEnd: () => void
+}) {
+  const [draft, setDraft] = useState(page.text)
+  const editorRef = useRef<HTMLTextAreaElement>(null)
+  const dirty = useRef(false)
+
+  useEffect(() => {
+    if (!editing) setDraft(page.text)
+  }, [editing, page.text])
+
+  useLayoutEffect(() => {
+    if (!editing) return
+    const editor = editorRef.current
+    if (!editor) return
+    editor.focus()
+    editor.setSelectionRange(editor.value.length, editor.value.length)
+    onSelectText({ start: page.start + editor.value.length, end: page.start + editor.value.length })
+  }, [editing, onSelectText, page.start])
+
+  const updateSelection = () => {
+    const editor = editorRef.current
+    if (!editor) return
+    onSelectText({ start: page.start + editor.selectionStart, end: page.start + editor.selectionEnd })
+  }
+
+  const finishEditing = () => {
+    onFinishEditing()
+    if (dirty.current) {
+      onChange(page.start, page.end, draft)
+      dirty.current = false
+      onInteractionEnd()
+    }
+  }
+
+  if (editing) {
+    return (
+      <textarea
+        ref={editorRef}
+        className="page-copy page-copy-editor"
+        value={draft}
+        onChange={(event) => {
+          if (!dirty.current) onInteractionStart()
+          dirty.current = true
+          setDraft(event.target.value)
+        }}
+        onSelect={updateSelection}
+        onKeyUp={updateSelection}
+        onBlur={finishEditing}
+        onClick={(event) => event.stopPropagation()}
+        spellCheck={false}
+        aria-label="페이지 본문 편집"
+      />
+    )
+  }
+
+  return (
+    <div
+      className="page-copy page-copy-preview"
+      onClick={(event) => {
+        event.stopPropagation()
+        onStartEditing()
+      }}
+      title="본문 편집"
+    >
+      <TextContent document={document} page={page} />
+    </div>
+  )
 }
 
 function ImageItem({
@@ -183,12 +273,18 @@ function SpeechBubbleItem({
   onInteractionEnd: () => void
 }) {
   const session = useRef<BubblePointerSession | null>(null)
+  const textEdit = useRef<{ started: boolean } | null>(null)
   const avatar = profile?.avatar ?? ""
   const speakerName = profile?.name ?? bubble.speakerName
   const bubbleColor = profile?.bubbleColor ?? bubble.bubbleColor
   const textColor = profile?.textColor ?? bubble.textColor
 
   const start = (event: PointerEvent<HTMLDivElement>) => {
+    if (selected && event.target instanceof Element && event.target.closest("[data-bubble-editor]")) {
+      event.stopPropagation()
+      onSelect()
+      return
+    }
     event.preventDefault()
     event.stopPropagation()
     const page = event.currentTarget.closest<HTMLElement>("[data-book-page]")
@@ -221,6 +317,55 @@ function SpeechBubbleItem({
     onInteractionEnd()
   }
 
+  const startTextEdit = (event: FocusEvent<HTMLElement>) => {
+    event.stopPropagation()
+    onSelect()
+    textEdit.current = { started: false }
+  }
+
+  const changeTextEdit = (event: FormEvent<HTMLElement>) => {
+    event.stopPropagation()
+    if (!textEdit.current || textEdit.current.started) return
+    textEdit.current.started = true
+    onInteractionStart()
+  }
+
+  const finishTextEdit = (field: "text" | "secondaryText", event: FocusEvent<HTMLElement>) => {
+    const current = textEdit.current
+    textEdit.current = null
+    if (!current?.started) return
+    onChange({ [field]: event.currentTarget.innerText })
+    onInteractionEnd()
+  }
+
+  const avatarNode = avatar ? <img className="speech-avatar" src={avatar} alt={`${speakerName} 프로필`} draggable={false} /> : null
+  const cardNode = (
+    <div className="speech-card">
+      {speakerName ? <strong>{speakerName}</strong> : null}
+      <p
+        contentEditable={selected}
+        suppressContentEditableWarning
+        data-bubble-editor
+        onFocus={startTextEdit}
+        onInput={changeTextEdit}
+        onBlur={(event) => finishTextEdit("text", event)}
+      >
+        {bubble.text}
+      </p>
+      <small
+        contentEditable={selected}
+        suppressContentEditableWarning
+        data-bubble-editor
+        data-placeholder="보조 문장"
+        onFocus={startTextEdit}
+        onInput={changeTextEdit}
+        onBlur={(event) => finishTextEdit("secondaryText", event)}
+      >
+        {bubble.secondaryText}
+      </small>
+    </div>
+  )
+
   return (
     <div
       className={`speech-layer side-${bubble.side}${avatar ? " has-avatar" : " is-text-only"}${selected ? " is-selected" : ""}`}
@@ -238,12 +383,9 @@ function SpeechBubbleItem({
       onPointerCancel={end}
       data-speech-bubble={bubble.id}
     >
-      {avatar ? <img className="speech-avatar" src={avatar} alt={`${speakerName} 프로필`} draggable={false} /> : null}
-      <div className="speech-card">
-        {speakerName ? <strong>{speakerName}</strong> : null}
-        <p>{bubble.text}</p>
-        {bubble.secondaryText ? <small>{bubble.secondaryText}</small> : null}
-      </div>
+      {bubble.side === "left" ? avatarNode : null}
+      {cardNode}
+      {bubble.side === "right" ? avatarNode : null}
       {selected ? (
         <button className="speech-delete" type="button" onPointerDown={(event) => event.stopPropagation()} onClick={onDelete} title="말풍선 삭제">
           <Trash2 aria-hidden="true" />
@@ -374,6 +516,7 @@ function DropPage({
 }
 
 export function BookCanvas(props: Props) {
+  const [editingPage, setEditingPage] = useState<number | null>(null)
   const coverVisible = props.document.options.coverMode !== "none"
   const coverHasImage = props.document.options.coverMode === "image" || props.document.options.coverMode === "image-text"
   const coverHasText = props.document.options.coverMode === "text" || props.document.options.coverMode === "image-text"
@@ -414,7 +557,7 @@ export function BookCanvas(props: Props) {
         const pageNumber = index + 1
         return (
           <DropPage
-            key={`${page.start}-${page.end}-${pageNumber}`}
+            key={`page-${pageNumber}`}
             page={pageNumber}
             selected={props.selectedPage === pageNumber}
             document={props.document}
@@ -432,9 +575,20 @@ export function BookCanvas(props: Props) {
             onInteractionStart={props.onInteractionStart}
             onInteractionEnd={props.onInteractionEnd}
           >
-            <div className="page-copy">
-              <TextContent document={props.document} page={page} />
-            </div>
+            <PageTextEditor
+              document={props.document}
+              page={page}
+              editing={editingPage === pageNumber}
+              onStartEditing={() => {
+                props.onSelectPage(pageNumber)
+                setEditingPage(pageNumber)
+              }}
+              onFinishEditing={() => setEditingPage(null)}
+              onChange={props.onChangePageText}
+              onSelectText={props.onSelectText}
+              onInteractionStart={props.onInteractionStart}
+              onInteractionEnd={props.onInteractionEnd}
+            />
           </DropPage>
         )
       })}

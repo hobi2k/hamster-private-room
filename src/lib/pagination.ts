@@ -70,7 +70,7 @@ export function decoratePage(
   }))
 
   const smartRanges = [
-    { expression: /["“][^"”]+["”]/g, style: { color: options.quoteColor, fontStyle: options.quoteItalic ? "italic" : undefined } },
+    { expression: /"[^"]+"|“[^”]+”|‘[^’]+’/g, style: { color: options.quoteColor, fontStyle: options.quoteItalic ? "italic" : undefined } },
     { expression: /\([^)]*\)|\[[^\]]*\]/g, style: { color: options.bracketColor, fontStyle: options.bracketItalic ? "italic" : undefined } },
   ]
   smartRanges.forEach(({ expression, style }) => {

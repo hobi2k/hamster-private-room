@@ -17,6 +17,31 @@ async function capture(element: HTMLElement) {
   })
 }
 
+function canvasToBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("PNG conversion failed")), "image/png")
+  })
+}
+
+function findPage(selectedPage: number) {
+  const pages = Array.from(document.querySelectorAll<HTMLElement>("[data-book-page]"))
+  return pages.find((page) => Number(page.dataset.pageIndex) === selectedPage) ?? pages[0]
+}
+
+export async function copyBookPage(selectedPage: number) {
+  const selected = findPage(selectedPage)
+  if (!selected || !navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+    throw new Error("Image clipboard is not supported")
+  }
+  document.body.classList.add("is-exporting")
+  try {
+    const blob = capture(selected).then(canvasToBlob)
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+  } finally {
+    document.body.classList.remove("is-exporting")
+  }
+}
+
 export async function exportBook(mode: ExportMode, selectedPage: number, title: string) {
   const pages = Array.from(document.querySelectorAll<HTMLElement>("[data-book-page]"))
   if (!pages.length) return
@@ -24,7 +49,8 @@ export async function exportBook(mode: ExportMode, selectedPage: number, title: 
   const safeTitle = title.trim().replace(/[\\/:*?"<>|]/g, "-") || "hamster-book"
   try {
     if (mode === "selected") {
-      const selected = pages.find((page) => Number(page.dataset.pageIndex) === selectedPage) ?? pages[0]
+      const selected = findPage(selectedPage)
+      if (!selected) return
       download(await capture(selected), `${safeTitle}-page-${selectedPage}.png`)
       return
     }

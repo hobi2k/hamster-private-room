@@ -3,6 +3,7 @@ import {
   Camera,
   Check,
   ChevronDown,
+  ClipboardCopy,
   Download,
   FileDown,
   FileUp,
@@ -31,6 +32,7 @@ import type {
   MarkKind,
   MemberProfile,
   SpeechBubble,
+  TextSelection,
   ThemePreset,
 } from "../types"
 
@@ -42,11 +44,11 @@ type Props = {
   selectedPage: number
   selectedImage: ImageLayer | null
   selectedBubble: SpeechBubble | null
+  textSelection: TextSelection | null
   members: MemberProfile[]
   customPresets: ThemePreset[]
   onClose: () => void
   onSetTitle: (title: string) => void
-  onSetBody: (body: string) => void
   onPatchOptions: (patch: Partial<BookOptions>) => void
   onApplyTheme: (theme: ThemePreset) => void
   onSavePreset: (name: string) => void
@@ -69,6 +71,7 @@ type Props = {
   onApplyFooterAll: () => void
   onDeleteFooter: (all: boolean) => void
   onExport: (mode: ExportMode) => void
+  onCopyPage: () => void
   onSaveTemporary: () => void
   onDownloadProject: () => void
   onImportProject: (file: File) => void
@@ -146,9 +149,9 @@ function ColorInput({ value, onChange, label }: { value: string; onChange: (valu
   )
 }
 
-function Section({ title, children, open = true }: { title: string; children: ReactNode; open?: boolean }) {
+function Section({ title, children, open = true, className = "" }: { title: string; children: ReactNode; open?: boolean; className?: string }) {
   return (
-    <details className="inspector-section" open={open}>
+    <details className={`inspector-section${className ? ` ${className}` : ""}`} open={open}>
       <summary>
         <span>{title}</span>
         <ChevronDown aria-hidden="true" />
@@ -159,41 +162,42 @@ function Section({ title, children, open = true }: { title: string; children: Re
 }
 
 function ManuscriptPanel(props: Props) {
-  const editorRef = useRef<HTMLTextAreaElement>(null)
   const options = props.document.options
   const addSelectionMark = (kind: MarkKind, value: string) => {
-    const editor = editorRef.current
-    if (!editor) return
-    props.onAddMark(editor.selectionStart, editor.selectionEnd, kind, value)
+    const selection = props.textSelection
+    if (!selection) {
+      props.onNotify("페이지 본문에서 꾸밀 글자를 먼저 선택해 주세요.")
+      return
+    }
+    props.onAddMark(selection.start, selection.end, kind, value)
+  }
+
+  const hasSelectionMark = (kind: MarkKind, value: string) => {
+    const selection = props.textSelection
+    if (!selection) return false
+    return props.document.marks.some((mark) => mark.start === selection.start && mark.end === selection.end && mark.kind === kind && mark.value === value)
   }
 
   return (
     <>
       <PanelHeader title="원고와 표지" />
       <div className="panel-scroll">
-        <Section title="본문 원고">
+        <Section title="책 정보">
           <Field label="책 이름">
             <input value={props.document.title} onChange={(event) => props.onSetTitle(event.target.value)} />
           </Field>
-          <Field label="본문" hint="분량과 지면 설정에 따라 페이지가 자동으로 늘고 줄어듭니다.">
-            <textarea
-              ref={editorRef}
-              className="manuscript-editor"
-              value={props.document.body}
-              onChange={(event) => props.onSetBody(event.target.value)}
-              spellCheck={false}
-            />
-          </Field>
+        </Section>
+        <Section title="선택 글자 꾸미기">
           <div className="selection-toolbar" aria-label="선택한 글자 꾸미기">
-            <button type="button" onClick={() => addSelectionMark("bold", "700")} title="굵게">
+            <button className={hasSelectionMark("bold", "700") ? "is-active" : ""} type="button" onClick={() => addSelectionMark("bold", "700")} title="굵게">
               <Bold aria-hidden="true" />
             </button>
-            <button type="button" onClick={() => addSelectionMark("italic", "italic")} title="기울임">
+            <button className={hasSelectionMark("italic", "italic") ? "is-active" : ""} type="button" onClick={() => addSelectionMark("italic", "italic")} title="기울임">
               <Italic aria-hidden="true" />
             </button>
             {options.accentColors.map((color, index) => (
               <button
-                className="swatch-button"
+                className={`swatch-button${hasSelectionMark("color", color) ? " is-active" : ""}`}
                 style={{ "--swatch": color } as React.CSSProperties}
                 type="button"
                 key={`${color}-${index}`}
@@ -201,7 +205,7 @@ function ManuscriptPanel(props: Props) {
                 title={`보조색 ${index + 1}`}
               />
             ))}
-            <button type="button" onClick={() => addSelectionMark("highlight", `${options.accentColors[0]}88`)} title="형광펜">
+            <button className={hasSelectionMark("highlight", `${options.accentColors[0]}88`) ? "is-active" : ""} type="button" onClick={() => addSelectionMark("highlight", `${options.accentColors[0]}88`)} title="형광펜">
               <Highlighter aria-hidden="true" />
             </button>
             <button type="button" onClick={props.onClearMarks} title="수동 서식 지우기">
@@ -364,6 +368,7 @@ function ImagePanel(props: Props) {
 }
 
 function DialoguePanel(props: Props) {
+  const panelRef = useRef<HTMLDivElement>(null)
   const [selectedMemberId, setSelectedMemberId] = useState(props.members[0]?.id ?? "")
   const [message, setMessage] = useState("")
   const [secondaryText, setSecondaryText] = useState("")
@@ -374,6 +379,12 @@ function DialoguePanel(props: Props) {
     if (selectedMember || !props.members.length) return
     setSelectedMemberId(props.members[0].id)
   }, [props.members, selectedMember])
+
+  useEffect(() => {
+    const profileId = props.selectedBubble?.profileId
+    if (profileId && props.members.some((member) => member.id === profileId)) setSelectedMemberId(profileId)
+    if (props.selectedBubble) panelRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+  }, [props.members, props.selectedBubble])
 
   const addMember = () => {
     setSelectedMemberId(props.onAddMember())
@@ -392,7 +403,7 @@ function DialoguePanel(props: Props) {
   return (
     <>
       <PanelHeader title={`말풍선 · ${props.selectedPage}쪽`} />
-      <div className="panel-scroll">
+      <div className="panel-scroll dialogue-panel" ref={panelRef}>
         <Section title="멤버 프로필">
           <div className="profile-list">
             {props.members.map((member) => (
@@ -468,7 +479,7 @@ function DialoguePanel(props: Props) {
         </Section>
 
         {props.selectedBubble ? (
-          <Section title="선택한 말풍선">
+          <Section title="선택한 말풍선" className="selected-bubble-section">
             <Field label="멤버">
               <select value={props.selectedBubble.profileId} onChange={(event) => props.onPatchBubble({ profileId: event.target.value })}>
                 <option value="">프로필 없이 표시</option>
@@ -635,6 +646,10 @@ function ExportPanel(props: Props) {
       <PanelHeader title="저장과 내보내기" />
       <div className="panel-scroll">
         <Section title="이미지로 저장">
+          <button className="export-choice is-copy" type="button" onClick={props.onCopyPage}>
+            <ClipboardCopy aria-hidden="true" />
+            <span><strong>선택 페이지 복사</strong><small>PNG 이미지를 바로 붙여넣기</small></span>
+          </button>
           <button className="export-choice" type="button" onClick={() => props.onExport("selected")}>
             <Download aria-hidden="true" />
             <span><strong>선택한 페이지만</strong><small>현재 페이지를 고해상도 PNG로 저장</small></span>

@@ -7,7 +7,7 @@
   font-family: "Pretendard", sans-serif;
   color: #42301f;
   background: #efe0c2;
-  font-synthesis: none;
+  font-synthesis: style weight;
   text-rendering: optimizeLegibility;
   --paper: #fcf5e6;
   --paper-2: #f7edd7;
@@ -215,6 +215,9 @@ svg {
   z-index: 30;
   display: flex;
   min-width: 0;
+  min-height: 0;
+  height: 100dvh;
+  overflow: hidden;
   flex-direction: column;
   background: var(--paper-2);
   border-right: 1px solid var(--line);
@@ -387,6 +390,13 @@ svg {
 
 .selection-toolbar button:hover {
   border-color: var(--honey);
+}
+
+.selection-toolbar button.is-active {
+  border-color: var(--honey-deep);
+  background: var(--honey-soft);
+  color: #8c4f11;
+  box-shadow: inset 0 0 0 1px rgba(213, 132, 42, 0.18);
 }
 
 .swatch-button::before {
@@ -1423,6 +1433,28 @@ kbd {
   word-break: keep-all;
 }
 
+.page-copy-preview {
+  cursor: text;
+}
+
+.page-copy-editor {
+  right: var(--page-padding-x);
+  bottom: 11%;
+  width: calc((100% - var(--page-padding-x) - var(--page-padding-x)) / var(--page-scale-x));
+  padding: 0 4px 0 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  caret-color: currentColor;
+  overflow: auto;
+}
+
+.page-copy-editor:focus {
+  box-shadow: inset 0 -1px rgba(234, 165, 60, 0.5);
+}
+
 .paragraph-gap {
   display: block;
 }
@@ -1506,12 +1538,14 @@ kbd {
 
 .page-footer-note strong {
   font-size: 2.3cqw;
+  font-style: inherit;
 }
 
 .page-footer-note span {
   margin-top: 0.5cqw;
   font-size: 1.9cqw;
   opacity: 0.72;
+  font-style: inherit;
 }
 
 .drop-hint {
@@ -1621,7 +1655,10 @@ kbd {
 
 .speech-layer {
   position: absolute;
+  display: flex;
   min-width: 90px;
+  align-items: flex-end;
+  gap: 1.7cqw;
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -1633,7 +1670,9 @@ kbd {
 
 .speech-card {
   position: relative;
+  min-width: 0;
   min-height: 10cqw;
+  flex: 1;
   padding: 3cqw 3.3cqw 2.7cqw;
   border: 0.2cqw solid rgba(25, 31, 27, 0.1);
   border-radius: 2.2cqw;
@@ -1664,6 +1703,13 @@ kbd {
   word-break: keep-all;
 }
 
+.speech-card [contenteditable="true"] {
+  outline: 0;
+  cursor: text;
+  touch-action: auto;
+  user-select: text;
+}
+
 .speech-card small {
   margin-top: 1.2cqw;
   font-size: 2.1cqw;
@@ -1671,33 +1717,39 @@ kbd {
   white-space: pre-wrap;
 }
 
+.speech-card small:empty:not([contenteditable="true"]) {
+  display: none;
+}
+
+.speech-card [contenteditable="true"]:empty::before {
+  content: attr(data-placeholder);
+  opacity: 0.42;
+}
+
 .speech-layer.has-avatar .speech-card::after {
   content: "";
   position: absolute;
-  bottom: -2.1cqw;
+  bottom: 3cqw;
   width: 0;
   height: 0;
-  border-top: 2.8cqw solid var(--bubble-color);
-  border-right: 2.4cqw solid transparent;
-  border-left: 2.4cqw solid transparent;
+  border-top: 1.6cqw solid transparent;
+  border-bottom: 1.6cqw solid transparent;
 }
 
 .speech-layer.side-left .speech-card::after {
-  left: 2.8cqw;
-  transform: rotate(22deg);
+  left: -1.7cqw;
+  border-right: 2cqw solid var(--bubble-color);
 }
 
 .speech-layer.side-right .speech-card::after {
-  right: 2.8cqw;
-  transform: rotate(-22deg);
+  right: -1.7cqw;
+  border-left: 2cqw solid var(--bubble-color);
 }
 
 .speech-avatar {
-  position: absolute;
-  z-index: 2;
-  bottom: -5.2cqw;
   width: 10cqw;
   height: 10cqw;
+  flex: 0 0 10cqw;
   border: 0.5cqw solid rgba(255, 255, 255, 0.95);
   border-radius: 50%;
   background: #ffffff;
@@ -1706,24 +1758,23 @@ kbd {
   pointer-events: none;
 }
 
-.speech-layer.side-left .speech-avatar {
-  left: -4.2cqw;
-}
-
-.speech-layer.side-right .speech-avatar {
-  right: -4.2cqw;
-}
-
-.speech-layer.has-avatar {
-  margin-bottom: 5cqw;
-}
-
 .speech-layer.is-selected::after {
   content: "";
   position: absolute;
   inset: -1.2cqw;
   border: 0.35cqw solid var(--honey);
   pointer-events: none;
+}
+
+.dialogue-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.selected-bubble-section {
+  order: -1;
+  border-color: #d7ab59;
+  box-shadow: inset 3px 0 var(--honey), var(--shadow-card);
 }
 
 .speech-delete {
