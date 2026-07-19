@@ -1656,6 +1656,7 @@ kbd {
 
 .speech-layer {
   position: absolute;
+  z-index: 7;
   display: flex;
   min-width: 90px;
   align-items: flex-end;
