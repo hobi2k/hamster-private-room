@@ -1,5 +1,5 @@
 import { RotateCw, Trash2 } from "lucide-react"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { CSSProperties, DragEvent, FocusEvent, FormEvent, PointerEvent, ReactNode } from "react"
 import { decoratePage } from "../lib/pagination"
 import type { BookDocument, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
@@ -104,14 +104,24 @@ function PageTextEditor({
     onSelectText({ start: page.start + editor.selectionStart, end: page.start + editor.selectionEnd })
   }
 
-  const finishEditing = () => {
+  const finishEditing = useCallback(() => {
     onFinishEditing()
     if (dirty.current) {
       onChange(page.start, page.end, draft)
       dirty.current = false
       onInteractionEnd()
     }
-  }
+  }, [draft, onChange, onFinishEditing, onInteractionEnd, page.end, page.start])
+
+  useEffect(() => {
+    if (!editing) return
+    const finishOutside = (event: globalThis.PointerEvent) => {
+      if (event.target instanceof Node && editorRef.current?.contains(event.target)) return
+      finishEditing()
+    }
+    window.document.addEventListener("pointerdown", finishOutside, true)
+    return () => window.document.removeEventListener("pointerdown", finishOutside, true)
+  }, [editing, finishEditing])
 
   if (editing) {
     return (
