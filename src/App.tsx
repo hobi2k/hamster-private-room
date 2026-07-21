@@ -404,7 +404,8 @@ export default function App() {
 
   const deleteSelectedPages = useCallback(() => {
     const pageNumbers = [...selectedPages].sort((left, right) => left - right)
-    if (pageNumbers.length < 2) return
+    if (!pageNumbers.length) return
+    setPendingCaret(null)
     const contentPages = pageNumbers.filter((page) => page > 0)
     const ranges = contentPages.map((page) => pages[page - 1]).filter(Boolean).map((page) => {
       if (documentState.body[page.end] === PAGE_BREAK) return { start: page.start, end: page.end + 1 }
@@ -441,7 +442,14 @@ export default function App() {
     setSelectedImageId("")
     setSelectedBubbleId("")
     setTextSelection(null)
-    notify(`${pageNumbers.length}개 페이지를 지웠어요. 실행 취소로 되돌릴 수 있어요.`, "success")
+    const message = pageNumbers.length > 1
+      ? `${pageNumbers.length}개 페이지를 지웠어요.`
+      : pageNumbers[0] === 0
+        ? "표지를 지웠어요."
+        : pages.length === 1
+          ? "마지막 본문 페이지를 비웠어요."
+          : `${pageNumbers[0]}쪽을 지웠어요.`
+    notify(`${message} 실행 취소로 되돌릴 수 있어요.`, "success")
   }, [commit, documentState.body, notify, pages, selectedPages])
 
   useEffect(() => {
@@ -1100,6 +1108,16 @@ export default function App() {
               <strong>{documentState.title || "제목 없는 책"}</strong>
             </div>
           )}
+          {selectedPages.length === 1 ? (
+            <button
+              className="delete-page-button"
+              type="button"
+              onClick={deleteSelectedPages}
+              title={selectedPage === 0 ? "표지 삭제" : "현재 페이지 삭제"}
+            >
+              <Trash2 aria-hidden="true" /> <span>{selectedPage === 0 ? "표지 삭제" : "페이지 삭제"}</span>
+            </button>
+          ) : null}
           <button className="add-page-button" type="button" onClick={addPage} title="마지막에 빈 페이지 추가">
             <Plus aria-hidden="true" /> <span>페이지 추가</span>
           </button>
