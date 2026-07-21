@@ -2169,6 +2169,18 @@ kbd {
   pointer-events: none;
 }
 
+.speech-layer.is-flow.is-selected::after {
+  display: none;
+}
+
+.speech-layer.is-flow.is-selected {
+  min-width: 33cqw;
+}
+
+.speech-layer.is-flow.is-selected .speech-card {
+  box-shadow: 0 0 0 0.35cqw var(--honey), 0 1.2cqw 2.8cqw rgba(90, 68, 40, 0.13);
+}
+
 .dialogue-panel {
   display: flex;
   flex-direction: column;
@@ -2198,6 +2210,20 @@ kbd {
 .speech-layer.is-near-top .speech-toolbar {
   top: 1cqw;
   right: 1cqw;
+}
+
+.speech-layer.is-flow .speech-toolbar {
+  top: 1cqw;
+  right: 1cqw;
+  padding: 0.55cqw;
+  gap: 0.5cqw;
+}
+
+.speech-layer.is-flow .speech-toolbar button {
+  width: 4.6cqw;
+  height: 4.6cqw;
+  min-width: 20px;
+  min-height: 20px;
 }
 
 .speech-toolbar button {

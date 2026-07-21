@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Check, RotateCw, Trash2 } from "lucide-react"
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
-import type { CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
 import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
@@ -13,6 +13,7 @@ type Props = {
   selectedPages: number[]
   selectedImageId: string
   selectedBubbleId: string
+  pendingCaret: { offset: number; beforeBubbleId: string | null } | null
   transformMode: boolean
   onSelectPage: (page: number, additive?: boolean) => void
   onSelectImage: (id: string) => void
@@ -23,7 +24,14 @@ type Props = {
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
-  onChangePageText: (start: number, end: number, text: string, followingBubbleIds: string[]) => void
+  onChangePageText: (
+    start: number,
+    end: number,
+    text: string,
+    followingBubbleIds: string[],
+    caret?: { offset: number; beforeBubbleId: string | null },
+  ) => void
+  onCaretRestored: () => void
   onSelectText: (selection: TextSelection) => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
@@ -86,13 +94,67 @@ function selectionTextLength(editor: HTMLElement, node: Node, offset: number) {
   return editableNodeText(fragment).replace(/\n$/, "").length
 }
 
+function caretTextLength(editor: HTMLElement) {
+  const selection = window.getSelection()
+  if (!selection?.focusNode || !editor.contains(selection.focusNode)) return editableElementText(editor).length
+  return selectionTextLength(editor, selection.focusNode, selection.focusOffset)
+}
+
+function placeCaret(editor: HTMLElement, offset: number) {
+  const range = window.document.createRange()
+  let remaining = Math.max(0, offset)
+  let placed = false
+
+  const visit = (node: Node) => {
+    if (placed) return
+    if (node.nodeType === Node.TEXT_NODE) {
+      const length = node.nodeValue?.length ?? 0
+      if (remaining <= length) {
+        range.setStart(node, remaining)
+        placed = true
+        return
+      }
+      remaining -= length
+      return
+    }
+    if (!(node instanceof Element)) {
+      Array.from(node.childNodes).forEach(visit)
+      return
+    }
+    const virtualLength = node.classList.contains("paragraph-gap") ? 2 : node.tagName === "BR" ? 1 : 0
+    if (virtualLength) {
+      if (remaining <= virtualLength) {
+        range.setStartAfter(node)
+        placed = true
+        return
+      }
+      remaining -= virtualLength
+      return
+    }
+    Array.from(node.childNodes).forEach(visit)
+  }
+
+  Array.from(editor.childNodes).forEach(visit)
+  if (!placed) {
+    range.selectNodeContents(editor)
+    range.collapse(false)
+  } else {
+    range.collapse(true)
+  }
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+}
+
 function FlowTextSegment({
   document,
   start,
   end,
   followingBubbleIds,
+  pendingCaret,
   onSelectPage,
   onChange,
+  onCaretRestored,
   onSelectText,
   onInteractionStart,
   onInteractionEnd,
@@ -101,22 +163,57 @@ function FlowTextSegment({
   start: number
   end: number
   followingBubbleIds: string[]
+  pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
-  onChange: (start: number, end: number, text: string, followingBubbleIds: string[]) => void
+  onChange: Props["onChangePageText"]
+  onCaretRestored: () => void
   onSelectText: (selection: TextSelection) => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
 }) {
   const editorRef = useRef<HTMLDivElement>(null)
   const dirty = useRef(false)
+  const editEnd = useRef(end)
   const preserveKeyboardSelection = useRef(false)
   const html = useMemo(() => decoratedTextHtml(document, start, end), [document, end, start])
+  const beforeBubbleId = followingBubbleIds[0] ?? null
 
   useLayoutEffect(() => {
     const editor = editorRef.current
-    if (!editor || dirty.current || editor.innerHTML === html) return
+    if (!editor || (dirty.current && window.document.activeElement === editor) || editor.innerHTML === html) return
     editor.innerHTML = html
   }, [html])
+
+  useLayoutEffect(() => {
+    if (!dirty.current) editEnd.current = end
+  }, [end])
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current
+    if (!editor || !pendingCaret || pendingCaret.beforeBubbleId !== beforeBubbleId) return
+    if (pendingCaret.offset < start || pendingCaret.offset > end) return
+    editor.focus({ preventScroll: true })
+    placeCaret(editor, pendingCaret.offset - start)
+    onSelectText({ start: pendingCaret.offset, end: pendingCaret.offset })
+    const caretOffset = pendingCaret.offset - start
+    const restore = () => {
+      if (!editor.isConnected || window.document.activeElement !== editor) return
+      placeCaret(editor, caretOffset)
+    }
+    const frame = window.requestAnimationFrame(restore)
+    const timer = window.setTimeout(() => {
+      restore()
+      onCaretRestored()
+    }, 120)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+    }
+  }, [beforeBubbleId, end, onCaretRestored, onSelectText, pendingCaret, start])
+
+  useEffect(() => () => {
+    if (dirty.current) onInteractionEnd()
+  }, [onInteractionEnd])
 
   const updateSelection = () => {
     if (preserveKeyboardSelection.current) return
@@ -127,6 +224,46 @@ function FlowTextSegment({
     const anchor = start + selectionTextLength(editor, selection.anchorNode, selection.anchorOffset)
     const focus = start + selectionTextLength(editor, selection.focusNode, selection.focusOffset)
     onSelectText({ start: Math.min(anchor, focus), end: Math.max(anchor, focus) })
+  }
+
+  const applyCut = (event: ClipboardEvent<HTMLDivElement>) => {
+    const editor = event.currentTarget
+    const value = editableElementText(editor)
+    const selection = window.getSelection()
+    const hasNativeSelection = Boolean(
+      selection?.anchorNode
+      && selection.focusNode
+      && editor.contains(selection.anchorNode)
+      && editor.contains(selection.focusNode)
+      && !selection.isCollapsed,
+    )
+    const anchor = hasNativeSelection && selection?.anchorNode
+      ? selectionTextLength(editor, selection.anchorNode, selection.anchorOffset)
+      : 0
+    const focus = hasNativeSelection && selection?.focusNode
+      ? selectionTextLength(editor, selection.focusNode, selection.focusOffset)
+      : preserveKeyboardSelection.current ? value.length : 0
+    const cutStart = Math.min(anchor, focus)
+    const cutEnd = Math.max(anchor, focus)
+    if (cutStart === cutEnd) return
+
+    event.preventDefault()
+    event.clipboardData.setData("text/plain", value.slice(cutStart, cutEnd))
+    if (!dirty.current) {
+      onInteractionStart()
+      editEnd.current = end
+    }
+    dirty.current = true
+    preserveKeyboardSelection.current = false
+    const next = `${value.slice(0, cutStart)}${value.slice(cutEnd)}`
+    if (hasNativeSelection) selection?.deleteFromDocument()
+    else editor.textContent = next
+    onSelectText({ start: start + cutStart, end: start + cutStart })
+    onChange(start, editEnd.current, next, followingBubbleIds, {
+      offset: start + cutStart,
+      beforeBubbleId: followingBubbleIds[0] ?? null,
+    })
+    editEnd.current = start + next.length
   }
 
   return (
@@ -145,11 +282,23 @@ function FlowTextSegment({
       onPointerDown={() => {
         preserveKeyboardSelection.current = false
       }}
-      onInput={() => {
+      onInput={(event) => {
         preserveKeyboardSelection.current = false
-        if (!dirty.current) onInteractionStart()
+        if (!dirty.current) {
+          onInteractionStart()
+          editEnd.current = end
+        }
         dirty.current = true
+        const text = editableElementText(event.currentTarget)
+        const measuredCaret = caretTextLength(event.currentTarget)
+        const caret = start + (measuredCaret === 0 && text.length > editEnd.current - start ? text.length : measuredCaret)
+        onChange(start, editEnd.current, text, followingBubbleIds, {
+          offset: caret,
+          beforeBubbleId: followingBubbleIds[0] ?? null,
+        })
+        editEnd.current = start + text.length
       }}
+      onCut={applyCut}
       onSelect={updateSelection}
       onMouseUp={updateSelection}
       onKeyDown={(event) => {
@@ -168,7 +317,8 @@ function FlowTextSegment({
         updateSelection()
         if (!dirty.current) return
         dirty.current = false
-        onChange(start, end, editableElementText(event.currentTarget), followingBubbleIds)
+        editEnd.current = end
+        if (event.currentTarget.innerHTML !== html) event.currentTarget.innerHTML = html
         onInteractionEnd()
       }}
       onClick={(event) => {
@@ -178,7 +328,6 @@ function FlowTextSegment({
         }
       }}
       aria-label="페이지 본문 편집"
-      dangerouslySetInnerHTML={{ __html: html }}
     />
   )
 }
@@ -449,12 +598,14 @@ function PageFlowEditor({
   page,
   bubbles,
   selectedBubbleId,
+  pendingCaret,
   onSelectPage,
   onSelectBubble,
   onChangeBubble,
   onMoveBubble,
   onDeleteBubble,
   onChangePageText,
+  onCaretRestored,
   onSelectText,
   onInteractionStart,
   onInteractionEnd,
@@ -463,12 +614,14 @@ function PageFlowEditor({
   page: PageSlice
   bubbles: SpeechBubble[]
   selectedBubbleId: string
+  pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
   onSelectBubble: (id: string) => void
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
   onChangePageText: Props["onChangePageText"]
+  onCaretRestored: () => void
   onSelectText: (selection: TextSelection) => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
@@ -489,8 +642,10 @@ function PageFlowEditor({
         start={cursor}
         end={anchor}
         followingBubbleIds={globalOrder.slice(globalOrder.findIndex((item) => item.id === bubble.id)).map((item) => item.id)}
+        pendingCaret={pendingCaret}
         onSelectPage={onSelectPage}
         onChange={onChangePageText}
+        onCaretRestored={onCaretRestored}
         onSelectText={onSelectText}
         onInteractionStart={onInteractionStart}
         onInteractionEnd={onInteractionEnd}
@@ -522,8 +677,10 @@ function PageFlowEditor({
         ? globalOrder.slice(globalOrder.findIndex((item) => item.id === ordered.at(-1)?.id) + 1)
         : globalOrder.filter((bubble) => bubble.anchor >= page.end)
       ).map((item) => item.id)}
+      pendingCaret={pendingCaret}
       onSelectPage={onSelectPage}
       onChange={onChangePageText}
+      onCaretRestored={onCaretRestored}
       onSelectText={onSelectText}
       onInteractionStart={onInteractionStart}
       onInteractionEnd={onInteractionEnd}
@@ -776,12 +933,14 @@ export function BookCanvas(props: Props) {
                   : bubble.anchor >= page.start && (bubble.anchor < page.end || index === props.pages.length - 1))
               ))}
               selectedBubbleId={props.selectedBubbleId}
+              pendingCaret={props.pendingCaret}
               onSelectPage={() => props.onSelectPage(pageNumber)}
               onSelectBubble={props.onSelectBubble}
               onChangeBubble={props.onChangeBubble}
               onMoveBubble={props.onMoveBubble}
               onDeleteBubble={props.onDeleteBubble}
               onChangePageText={props.onChangePageText}
+              onCaretRestored={props.onCaretRestored}
               onSelectText={props.onSelectText}
               onInteractionStart={props.onInteractionStart}
               onInteractionEnd={props.onInteractionEnd}

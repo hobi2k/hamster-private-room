@@ -274,6 +274,7 @@ export default function App() {
   const [selectedImageId, setSelectedImageId] = useState("")
   const [selectedBubbleId, setSelectedBubbleId] = useState("")
   const [textSelection, setTextSelection] = useState<TextSelection | null>(null)
+  const [pendingCaret, setPendingCaret] = useState<{ offset: number; beforeBubbleId: string | null } | null>(null)
   const [transformMode, setTransformMode] = useState(true)
   const [customPresets, setCustomPresets] = useState(loadPresets)
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
@@ -300,6 +301,7 @@ export default function App() {
     setToast({ message, tone })
     window.setTimeout(() => setToast(null), 2600)
   }, [])
+  const clearPendingCaret = useCallback(() => setPendingCaret(null), [])
 
   const commit = useCallback((update: (current: BookDocument) => BookDocument) => {
     setDocumentState((current) => {
@@ -346,6 +348,7 @@ export default function App() {
   const undo = useCallback(() => {
     const previous = past.current.at(-1)
     if (!previous) return
+    setPendingCaret(null)
     past.current = past.current.slice(0, -1)
     future.current = [documentRef.current, ...future.current].slice(0, 80)
     setDocumentState(previous)
@@ -355,6 +358,7 @@ export default function App() {
   const redo = useCallback(() => {
     const next = future.current[0]
     if (!next) return
+    setPendingCaret(null)
     future.current = future.current.slice(1)
     past.current = [...past.current.slice(-79), documentRef.current]
     setDocumentState(next)
@@ -445,7 +449,15 @@ export default function App() {
       const modifier = event.ctrlKey || event.metaKey
       const target = event.target as HTMLElement
       const editingText = Boolean(target.closest("input, textarea, [contenteditable]"))
+      const flowEditor = target.closest<HTMLElement>("[data-flow-text-segment]")
       if (modifier && event.key.toLowerCase() === "z") {
+        if (flowEditor) {
+          event.preventDefault()
+          flowEditor.blur()
+          if (event.shiftKey) redo()
+          else undo()
+          return
+        }
         if (editingText) return
         event.preventDefault()
         if (event.shiftKey) redo()
@@ -453,6 +465,12 @@ export default function App() {
         return
       }
       if (modifier && event.key.toLowerCase() === "y") {
+        if (flowEditor) {
+          event.preventDefault()
+          flowEditor.blur()
+          redo()
+          return
+        }
         if (editingText) return
         event.preventDefault()
         redo()
@@ -505,7 +523,14 @@ export default function App() {
     })
   }
 
-  const replacePageText = (start: number, end: number, text: string, followingBubbleIds: string[]) => {
+  const replacePageText = (
+    start: number,
+    end: number,
+    text: string,
+    followingBubbleIds: string[],
+    caret?: { offset: number; beforeBubbleId: string | null },
+  ) => {
+    if (caret !== undefined) setPendingCaret(caret)
     updateTransient((current) => {
       if (current.body.slice(start, end) === text) return current
       const delta = text.length - (end - start)
@@ -1094,6 +1119,7 @@ export default function App() {
             selectedPages={selectedPages}
             selectedImageId={selectedImageId}
             selectedBubbleId={selectedBubbleId}
+            pendingCaret={pendingCaret}
             transformMode={transformMode}
             onSelectPage={selectPage}
             onSelectImage={(id) => {
@@ -1113,6 +1139,7 @@ export default function App() {
             onMoveBubble={moveBubble}
             onDeleteBubble={deleteBubble}
             onChangePageText={replacePageText}
+            onCaretRestored={clearPendingCaret}
             onSelectText={setTextSelection}
             onInteractionStart={beginTransient}
             onInteractionEnd={endTransient}
