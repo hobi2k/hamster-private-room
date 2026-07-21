@@ -45,6 +45,7 @@ export type MemberProfile = {
 export type SpeechBubble = {
   id: string
   page: number
+  anchor: number
   profileId: string
   speakerName: string
   text: string
@@ -60,16 +61,6 @@ export type SpeechBubble = {
   bubbleColor: string
   textColor: string
   zIndex: number
-}
-
-export type DialogueTextBlock = {
-  id: string
-  page: number
-  afterBubbleId: string
-  text: string
-  color: string
-  italic: boolean
-  weight: number
 }
 
 export type FooterNote = {
@@ -118,7 +109,6 @@ export type BookDocument = {
   images: ImageLayer[]
   members: MemberProfile[]
   speechBubbles: SpeechBubble[]
-  dialogueTexts: DialogueTextBlock[]
   marks: TextMark[]
   footers: Record<number, FooterNote>
   updatedAt: string
@@ -146,6 +136,7 @@ export type PageSlice = {
   text: string
   start: number
   end: number
+  blockIds?: string[]
 }
 
 export type ToastState = {

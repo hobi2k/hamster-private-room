@@ -1,4 +1,4 @@
-import type { BookOptions, SpeechBubble } from "../types"
+import type { BookOptions, MemberProfile, PageSlice, SpeechBubble } from "../types"
 
 type VerticalLayoutItem = {
   id: string
@@ -14,17 +14,30 @@ export function moveSpeechBubble(bubbles: SpeechBubble[], id: string, direction:
   const bubble = bubbles.find((item) => item.id === id)
   if (!bubble) return bubbles
   const ordered = bubbles
-    .filter((item) => item.page === bubble.page)
-    .sort((left, right) => left.y - right.y || left.zIndex - right.zIndex)
+    .filter((item) => (item.page === 0) === (bubble.page === 0))
+    .sort((left, right) => left.anchor - right.anchor || left.zIndex - right.zIndex)
   const target = ordered[ordered.findIndex((item) => item.id === id) + direction]
-  if (target && target.y !== bubble.y) {
+  if (!target) return bubbles
+  if (target.anchor !== bubble.anchor) {
     return bubbles.map((item) => item.id === bubble.id
-      ? { ...item, y: target.y }
-      : item.id === target.id ? { ...item, y: bubble.y } : item)
+      ? { ...item, anchor: target.anchor }
+      : item.id === target.id ? { ...item, anchor: bubble.anchor } : item)
   }
-  const y = Math.max(0, Math.min(90, Math.round((bubble.y + direction * 6) / 6) * 6))
-  if (y === bubble.y) return bubbles
-  return bubbles.map((item) => item.id === id ? { ...item, y } : item)
+  return bubbles.map((item) => item.id === bubble.id
+    ? { ...item, zIndex: target.zIndex }
+    : item.id === target.id ? { ...item, zIndex: bubble.zIndex } : item)
+}
+
+export function pageForAnchor(anchor: number, pages: PageSlice[]) {
+  const index = pages.findIndex((page, pageIndex) => (
+    anchor >= page.start && (anchor < page.end || pageIndex === pages.length - 1)
+  ))
+  return Math.max(1, index + 1)
+}
+
+export function pageForBlock(id: string, pages: PageSlice[]) {
+  const index = pages.findIndex((page) => page.blockIds?.includes(id))
+  return index < 0 ? 0 : index + 1
 }
 
 export function speechBubbleWidth(bubble: SpeechBubble, speakerName: string, hasAvatar: boolean) {
@@ -55,14 +68,24 @@ export function resolveSpeechBubbleTops(items: VerticalLayoutItem[]) {
   return Object.fromEntries(placed.map((item) => [item.id, item.top - shift]))
 }
 
-export function estimateDialogueTextHeight(text: string, options: BookOptions) {
-  const inlineWidth = options.pageWidth * 0.82
-  const averageCharacterWidth = Math.max(1, (options.fontSize * 0.95 + options.letterSpacing) * options.scaleX)
-  const charactersPerLine = Math.max(6, Math.floor(inlineWidth / averageCharacterWidth))
-  const lines = text.split("\n").reduce((count, line) => count + Math.max(1, Math.ceil(Array.from(line).length / charactersPerLine)), 0)
-  const contentHeight = lines * options.fontSize * options.lineHeight
-  const verticalPadding = options.pageWidth * 0.032
-  return ((contentHeight + verticalPadding) / (options.pageWidth * 1.414)) * 100
+export function estimateSpeechBubbleHeight(bubble: SpeechBubble, profile: MemberProfile | undefined, options: BookOptions) {
+  const hasAvatar = Boolean(profile?.avatar)
+  const name = profile?.name ?? bubble.speakerName
+  const width = options.pageWidth * (speechBubbleWidth(bubble, name, hasAvatar) / 100)
+  const avatarWidth = hasAvatar ? options.pageWidth * 0.117 : 0
+  const cardWidth = Math.max(options.pageWidth * 0.2, width - avatarWidth - options.pageWidth * 0.017)
+  const horizontalPadding = options.pageWidth * 0.066
+  const messageSize = options.pageWidth * 0.029 * ((bubble.textScale ?? 100) / 100)
+  const secondarySize = options.pageWidth * 0.021 * ((bubble.secondaryTextScale ?? 100) / 100)
+  const lineCount = (text: string, size: number) => text.split("\n").reduce((total, line) => {
+    const units = Array.from(line).reduce((sum, character) => sum + (character === " " ? 0.36 : /[\x00-\x7F]/.test(character) ? 0.58 : 1), 0)
+    return total + Math.max(1, Math.ceil((units * size) / Math.max(size * 4, cardWidth - horizontalPadding)))
+  }, 0)
+  const nameHeight = name && bubble.showName !== false ? options.pageWidth * 0.038 : 0
+  const messageHeight = lineCount(bubble.text, messageSize) * messageSize * 1.35
+  const secondaryHeight = bubble.secondaryText ? lineCount(bubble.secondaryText, secondarySize) * secondarySize * 1.35 + options.pageWidth * 0.012 : 0
+  const cardHeight = Math.max(options.pageWidth * 0.1, options.pageWidth * 0.057 + nameHeight + messageHeight + secondaryHeight)
+  return (Math.max(cardHeight, hasAvatar ? options.pageWidth * 0.1 : 0) + options.pageWidth * 0.026) * 1.25
 }
 
 function longestLineUnits(text: string) {
