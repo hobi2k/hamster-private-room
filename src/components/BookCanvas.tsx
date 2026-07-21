@@ -1,9 +1,9 @@
 import { ArrowDown, ArrowUp, Check, RotateCw, Trash2 } from "lucide-react"
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
 import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
-import { speechBubbleWidth } from "../lib/speech"
+import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
 import type { BookDocument, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
@@ -325,6 +325,7 @@ function ImageItem({
 
 function SpeechBubbleItem({
   bubble,
+  top,
   profile,
   selected,
   onSelect,
@@ -335,6 +336,7 @@ function SpeechBubbleItem({
   onInteractionEnd,
 }: {
   bubble: SpeechBubble
+  top: number
   profile: MemberProfile | null
   selected: boolean
   onSelect: () => void
@@ -414,7 +416,7 @@ function SpeechBubbleItem({
       style={{
         left: bubble.side === "left" ? "8%" : "auto",
         right: bubble.side === "right" ? "8%" : "auto",
-        top: `${bubble.y}%`,
+        top: `${top}%`,
         width: `${bubble.autoWidth === false ? bubble.width : speechBubbleWidth(bubble, speakerName, Boolean(avatar))}%`,
         zIndex: bubble.zIndex + 10,
         "--bubble-color": bubbleColor,
@@ -489,7 +491,48 @@ function DropPage({
   onInteractionStart: () => void
   onInteractionEnd: () => void
 }) {
+  const pageRef = useRef<HTMLElement>(null)
+  const [speechTops, setSpeechTops] = useState<Record<string, number>>({})
   const options = document.options
+  const pageBubbles = useMemo(() => document.speechBubbles
+    .filter((bubble) => bubble.page === page)
+    .sort((left, right) => left.y - right.y || left.zIndex - right.zIndex), [document.speechBubbles, page])
+  const measureSpeechBubbles = useCallback(() => {
+    const pageElement = pageRef.current
+    if (!pageElement?.clientHeight) return
+    const elements = Array.from(pageElement.querySelectorAll<HTMLElement>("[data-speech-bubble]"))
+    const heights = new Map(elements.map((element) => [element.dataset.speechBubble ?? "", (element.getBoundingClientRect().height / pageElement.clientHeight) * 100]))
+    const next = resolveSpeechBubbleTops(pageBubbles.map((bubble) => ({
+      id: bubble.id,
+      y: bubble.y,
+      zIndex: bubble.zIndex,
+      height: heights.get(bubble.id) ?? 0,
+    })))
+    setSpeechTops((current) => {
+      const ids = Object.keys(next)
+      const unchanged = ids.length === Object.keys(current).length
+        && ids.every((id) => Math.abs((current[id] ?? -100) - next[id]) < 0.05)
+      return unchanged ? current : next
+    })
+  }, [pageBubbles])
+
+  useLayoutEffect(() => {
+    const pageElement = pageRef.current
+    if (!pageElement) return
+    measureSpeechBubbles()
+    const observer = new ResizeObserver(measureSpeechBubbles)
+    observer.observe(pageElement)
+    pageElement.querySelectorAll<HTMLElement>("[data-speech-bubble]").forEach((element) => observer.observe(element))
+    let cancelled = false
+    void window.document.fonts.ready.then(() => {
+      if (!cancelled) measureSpeechBubbles()
+    })
+    return () => {
+      cancelled = true
+      observer.disconnect()
+    }
+  }, [document.members, measureSpeechBubbles, selectedBubbleId])
+
   const style = {
     "--page-width": `${options.pageWidth}px`,
     "--page-padding-x": `${(options.paddingX / options.pageWidth) * 100}%`,
@@ -512,6 +555,7 @@ function DropPage({
 
   return (
     <article
+      ref={pageRef}
       className={`book-page texture-${options.pageTexture}${selected ? " is-selected" : ""}${multiSelected ? " is-multi-selected" : ""}`}
       style={style}
       data-book-page
@@ -538,13 +582,11 @@ function DropPage({
             onInteractionEnd={onInteractionEnd}
           />
         ))}
-      {document.speechBubbles
-        .filter((bubble) => bubble.page === page)
-        .sort((left, right) => left.zIndex - right.zIndex)
-        .map((bubble) => (
+      {pageBubbles.map((bubble) => (
           <SpeechBubbleItem
             key={bubble.id}
             bubble={bubble}
+            top={speechTops[bubble.id] ?? bubble.y}
             profile={document.members.find((member) => member.id === bubble.profileId) ?? null}
             selected={bubble.id === selectedBubbleId}
             onSelect={() => onSelectBubble(bubble.id)}

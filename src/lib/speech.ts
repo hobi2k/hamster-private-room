@@ -1,5 +1,9 @@
 import type { SpeechBubble } from "../types"
 
+type SpeechBubbleLayoutItem = Pick<SpeechBubble, "id" | "y" | "zIndex"> & {
+  height: number
+}
+
 export function moveSpeechBubble(bubbles: SpeechBubble[], id: string, direction: -1 | 1) {
   const bubble = bubbles.find((item) => item.id === id)
   if (!bubble) return bubbles
@@ -28,6 +32,23 @@ export function speechBubbleWidth(bubble: SpeechBubble, speakerName: string, has
     nameWidth,
   )
   return Math.max(24, Math.min(88, contentWidth + 6.6 + (hasAvatar ? 11.7 : 0)))
+}
+
+export function resolveSpeechBubbleTops(items: SpeechBubbleLayoutItem[]) {
+  const minTop = 2
+  const maxBottom = 96
+  const gap = 1.2
+  const ordered = [...items].sort((left, right) => left.y - right.y || left.zIndex - right.zIndex)
+  const placed = ordered.reduce<Array<SpeechBubbleLayoutItem & { top: number }>>((result, item) => {
+    const previous = result.at(-1)
+    const top = Math.max(minTop, Math.min(90, item.y), previous ? previous.top + previous.height + gap : minTop)
+    return [...result, { ...item, top }]
+  }, [])
+  const last = placed.at(-1)
+  const overflow = last ? Math.max(0, last.top + last.height - maxBottom) : 0
+  const availableShift = placed[0] ? Math.max(0, placed[0].top - minTop) : 0
+  const shift = Math.min(overflow, availableShift)
+  return Object.fromEntries(placed.map((item) => [item.id, item.top - shift]))
 }
 
 function longestLineUnits(text: string) {
