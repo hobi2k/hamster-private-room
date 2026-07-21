@@ -19,11 +19,12 @@ import {
   upsertBookSlot,
 } from "./lib/library"
 import { PAGE_BREAK, paginateText } from "./lib/pagination"
-import { moveSpeechBubble } from "./lib/speech"
+import { estimateDialogueTextHeight, moveSpeechBubble } from "./lib/speech"
 import type {
   BookDocument,
   BookOptions,
   BookSlot,
+  DialogueTextBlock,
   EditorTab,
   ExportMode,
   FooterNote,
@@ -54,6 +55,7 @@ function createDocument(): BookDocument {
     images: [],
     members: [],
     speechBubbles: [],
+    dialogueTexts: [],
     marks: [],
     footers: {},
     updatedAt: new Date().toISOString(),
@@ -68,6 +70,7 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
     images: Array.isArray(parsed.images) ? parsed.images : [],
     members: normalizeMembers(parsed.members),
     speechBubbles: Array.isArray(parsed.speechBubbles) ? parsed.speechBubbles : [],
+    dialogueTexts: Array.isArray(parsed.dialogueTexts) ? parsed.dialogueTexts : [],
     marks: Array.isArray(parsed.marks) ? parsed.marks : [],
     footers: parsed.footers ?? {},
   }
@@ -216,6 +219,7 @@ export default function App() {
   const [selectedPages, setSelectedPages] = useState(() => [documentState.options.coverMode === "none" ? 1 : 0])
   const [selectedImageId, setSelectedImageId] = useState("")
   const [selectedBubbleId, setSelectedBubbleId] = useState("")
+  const [bubbleGaps, setBubbleGaps] = useState<Record<number, Record<string, number>>>({})
   const [textSelection, setTextSelection] = useState<TextSelection | null>(null)
   const [transformMode, setTransformMode] = useState(true)
   const [customPresets, setCustomPresets] = useState(loadPresets)
@@ -326,6 +330,8 @@ export default function App() {
   const maxPage = pages.length
   const selectedImage = documentState.images.find((image) => image.id === selectedImageId) ?? null
   const selectedBubble = documentState.speechBubbles.find((bubble) => bubble.id === selectedBubbleId) ?? null
+  const selectedDialogueText = documentState.dialogueTexts.find((block) => block.afterBubbleId === selectedBubbleId) ?? null
+  const selectedBubbleGap = selectedBubble ? bubbleGaps[selectedBubble.page]?.[selectedBubble.id] ?? 0 : 0
 
   useEffect(() => {
     const fallback = selectedPage > maxPage || (selectedPage === 0 && documentState.options.coverMode === "none") ? Math.max(1, maxPage) : selectedPage
@@ -356,6 +362,7 @@ export default function App() {
         options: pageNumbers.includes(0) ? { ...current.options, coverMode: "none" } : current.options,
         images: current.images.filter((image) => !removed.has(image.page)).map((image) => ({ ...image, page: remapPage(image.page) })),
         speechBubbles: current.speechBubbles.filter((bubble) => !removed.has(bubble.page)).map((bubble) => ({ ...bubble, page: remapPage(bubble.page) })),
+        dialogueTexts: current.dialogueTexts.filter((block) => !removed.has(block.page)).map((block) => ({ ...block, page: remapPage(block.page) })),
         footers: Object.fromEntries(Object.entries(current.footers)
           .filter(([page]) => !removed.has(Number(page)))
           .map(([page, footer]) => [remapPage(Number(page)), footer])),
@@ -403,7 +410,11 @@ export default function App() {
       }
       if ((event.key === "Delete" || event.key === "Backspace") && selectedBubbleId && !target.closest("input, textarea, [contenteditable]")) {
         event.preventDefault()
-        commit((current) => ({ ...current, speechBubbles: current.speechBubbles.filter((bubble) => bubble.id !== selectedBubbleId) }))
+        commit((current) => ({
+          ...current,
+          speechBubbles: current.speechBubbles.filter((bubble) => bubble.id !== selectedBubbleId),
+          dialogueTexts: current.dialogueTexts.filter((block) => block.afterBubbleId !== selectedBubbleId),
+        }))
         setSelectedBubbleId("")
       }
     }
@@ -619,10 +630,60 @@ export default function App() {
 
   const deleteBubble = (id = selectedBubbleId) => {
     if (!id) return
-    commit((current) => ({ ...current, speechBubbles: current.speechBubbles.filter((bubble) => bubble.id !== id) }))
+    commit((current) => ({
+      ...current,
+      speechBubbles: current.speechBubbles.filter((bubble) => bubble.id !== id),
+      dialogueTexts: current.dialogueTexts.filter((block) => block.afterBubbleId !== id),
+    }))
     setSelectedBubbleId("")
     notify("말풍선을 지웠어요.")
   }
+
+  const addDialogueText = (text: string) => {
+    if (!selectedBubble || selectedDialogueText || !text.trim()) return
+    const required = estimateDialogueTextHeight(text.trim(), documentState.options)
+    if (selectedBubbleGap < required) {
+      notify("말풍선 사이의 여유가 부족해요. 아래 말풍선을 더 내려 주세요.", "warn")
+      return
+    }
+    const block: DialogueTextBlock = {
+      id: crypto.randomUUID(),
+      page: selectedBubble.page,
+      afterBubbleId: selectedBubble.id,
+      text: text.trim(),
+      color: documentState.options.textColor,
+      italic: false,
+      weight: documentState.options.fontWeight,
+    }
+    commit((current) => ({ ...current, dialogueTexts: [...current.dialogueTexts, block] }))
+    notify("말풍선 사이에 글을 넣었어요.", "success")
+  }
+
+  const patchDialogueText = (patch: Partial<DialogueTextBlock>, transient = false) => {
+    if (!selectedDialogueText) return
+    const update = (current: BookDocument) => ({
+      ...current,
+      dialogueTexts: current.dialogueTexts.map((block) => block.id === selectedDialogueText.id ? { ...block, ...patch } : block),
+    })
+    if (transient) updateTransient(update)
+    else commit(update)
+  }
+
+  const deleteDialogueText = () => {
+    if (!selectedDialogueText) return
+    commit((current) => ({ ...current, dialogueTexts: current.dialogueTexts.filter((block) => block.id !== selectedDialogueText.id) }))
+    notify("사이 글을 지웠어요.")
+  }
+
+  const updateBubbleGaps = useCallback((page: number, gaps: Record<string, number>) => {
+    setBubbleGaps((current) => {
+      const previous = current[page] ?? {}
+      const ids = Object.keys(gaps)
+      const unchanged = ids.length === Object.keys(previous).length
+        && ids.every((id) => Math.abs((previous[id] ?? -100) - gaps[id]) < 0.05)
+      return unchanged ? current : { ...current, [page]: gaps }
+    })
+  }, [])
 
   const addMark = (start: number, end: number, kind: MarkKind, value: string) => {
     if (start === end) {
@@ -898,6 +959,8 @@ export default function App() {
         selectedPage={selectedPage}
         selectedImage={selectedImage}
         selectedBubble={selectedBubble}
+        selectedDialogueText={selectedDialogueText}
+        selectedBubbleGap={selectedBubbleGap}
         textSelection={textSelection}
         members={documentState.members}
         customPresets={customPresets}
@@ -922,6 +985,9 @@ export default function App() {
         onPatchBubble={(patch) => selectedBubble && patchBubble(selectedBubble.id, patch)}
         onMoveBubble={(direction) => selectedBubble && moveBubble(selectedBubble.id, direction)}
         onDeleteBubble={() => deleteBubble()}
+        onAddDialogueText={addDialogueText}
+        onPatchDialogueText={(patch) => patchDialogueText(patch)}
+        onDeleteDialogueText={deleteDialogueText}
         onPatchFooter={patchFooter}
         onApplyFooterAll={applyFooterAll}
         onDeleteFooter={deleteFooter}
@@ -992,6 +1058,21 @@ export default function App() {
             onChangeBubble={(id, patch) => patchBubble(id, patch, true)}
             onMoveBubble={moveBubble}
             onDeleteBubble={deleteBubble}
+            onChangeDialogueText={(id, patch) => {
+              const block = documentState.dialogueTexts.find((item) => item.id === id)
+              if (!block) return
+              const update = (current: BookDocument) => ({
+                ...current,
+                dialogueTexts: current.dialogueTexts.map((item) => item.id === id ? { ...item, ...patch } : item),
+              })
+              updateTransient(update)
+            }}
+            onSelectDialogueText={(afterBubbleId) => {
+              setSelectedBubbleId(afterBubbleId)
+              setSelectedImageId("")
+              setActiveTab("dialogue")
+            }}
+            onBubbleGapsChange={updateBubbleGaps}
             onChangePageText={replacePageText}
             onSelectText={setTextSelection}
             onInteractionStart={beginTransient}

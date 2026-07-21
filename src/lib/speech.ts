@@ -1,8 +1,14 @@
-import type { SpeechBubble } from "../types"
+import type { BookOptions, SpeechBubble } from "../types"
 
-type SpeechBubbleLayoutItem = Pick<SpeechBubble, "id" | "y" | "zIndex"> & {
+type VerticalLayoutItem = {
+  id: string
+  y: number
+  zIndex: number
   height: number
 }
+
+export const DIALOGUE_LAYOUT_GAP = 1.2
+export const DIALOGUE_LAYOUT_MAX_BOTTOM = 94
 
 export function moveSpeechBubble(bubbles: SpeechBubble[], id: string, direction: -1 | 1) {
   const bubble = bubbles.find((item) => item.id === id)
@@ -34,21 +40,29 @@ export function speechBubbleWidth(bubble: SpeechBubble, speakerName: string, has
   return Math.max(24, Math.min(88, contentWidth + 6.6 + (hasAvatar ? 11.7 : 0)))
 }
 
-export function resolveSpeechBubbleTops(items: SpeechBubbleLayoutItem[]) {
+export function resolveSpeechBubbleTops(items: VerticalLayoutItem[]) {
   const minTop = 2
-  const maxBottom = 96
-  const gap = 1.2
   const ordered = [...items].sort((left, right) => left.y - right.y || left.zIndex - right.zIndex)
-  const placed = ordered.reduce<Array<SpeechBubbleLayoutItem & { top: number }>>((result, item) => {
+  const placed = ordered.reduce<Array<VerticalLayoutItem & { top: number }>>((result, item) => {
     const previous = result.at(-1)
-    const top = Math.max(minTop, Math.min(90, item.y), previous ? previous.top + previous.height + gap : minTop)
+    const top = Math.max(minTop, Math.min(90, item.y), previous ? previous.top + previous.height + DIALOGUE_LAYOUT_GAP : minTop)
     return [...result, { ...item, top }]
   }, [])
   const last = placed.at(-1)
-  const overflow = last ? Math.max(0, last.top + last.height - maxBottom) : 0
+  const overflow = last ? Math.max(0, last.top + last.height - DIALOGUE_LAYOUT_MAX_BOTTOM) : 0
   const availableShift = placed[0] ? Math.max(0, placed[0].top - minTop) : 0
   const shift = Math.min(overflow, availableShift)
   return Object.fromEntries(placed.map((item) => [item.id, item.top - shift]))
+}
+
+export function estimateDialogueTextHeight(text: string, options: BookOptions) {
+  const inlineWidth = options.pageWidth * 0.82
+  const averageCharacterWidth = Math.max(1, (options.fontSize * 0.95 + options.letterSpacing) * options.scaleX)
+  const charactersPerLine = Math.max(6, Math.floor(inlineWidth / averageCharacterWidth))
+  const lines = text.split("\n").reduce((count, line) => count + Math.max(1, Math.ceil(Array.from(line).length / charactersPerLine)), 0)
+  const contentHeight = lines * options.fontSize * options.lineHeight
+  const verticalPadding = options.pageWidth * 0.032
+  return ((contentHeight + verticalPadding) / (options.pageWidth * 1.414)) * 100
 }
 
 function longestLineUnits(text: string) {

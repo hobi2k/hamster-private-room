@@ -3,8 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
 import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
-import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
-import type { BookDocument, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
+import { DIALOGUE_LAYOUT_GAP, DIALOGUE_LAYOUT_MAX_BOTTOM, resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
+import type { BookDocument, DialogueTextBlock, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
   document: BookDocument
@@ -23,6 +23,9 @@ type Props = {
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
+  onChangeDialogueText: (id: string, patch: Partial<DialogueTextBlock>) => void
+  onSelectDialogueText: (afterBubbleId: string) => void
+  onBubbleGapsChange: (page: number, gaps: Record<string, number>) => void
   onChangePageText: (start: number, end: number, text: string) => void
   onSelectText: (selection: TextSelection) => void
   onInteractionStart: () => void
@@ -38,6 +41,12 @@ type PointerSession = {
   layer: ImageLayer
   startAngle: number
 }
+
+type DialogueLayoutItem = {
+  id: string
+  y: number
+  zIndex: number
+} & ({ kind: "bubble"; bubble: SpeechBubble } | { kind: "text"; block: DialogueTextBlock; owner: SpeechBubble })
 
 function TextContent({ document, page }: { document: BookDocument; page: PageSlice }) {
   let offset = 0
@@ -429,6 +438,7 @@ function SpeechBubbleItem({
         onSelect()
       }}
       data-speech-bubble={bubble.id}
+      data-dialogue-layout-id={`bubble:${bubble.id}`}
     >
       {bubble.side === "left" ? avatarNode : null}
       {cardNode}
@@ -446,6 +456,72 @@ function SpeechBubbleItem({
           </button>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function DialogueTextItem({
+  block,
+  owner,
+  top,
+  selected,
+  onSelect,
+  onChange,
+  onInteractionStart,
+  onInteractionEnd,
+}: {
+  block: DialogueTextBlock
+  owner: SpeechBubble
+  top: number
+  selected: boolean
+  onSelect: () => void
+  onChange: (patch: Partial<DialogueTextBlock>) => void
+  onInteractionStart: () => void
+  onInteractionEnd: () => void
+}) {
+  const textEdit = useRef<{ started: boolean } | null>(null)
+
+  return (
+    <div
+      className={selected ? "dialogue-text-block is-selected" : "dialogue-text-block"}
+      style={{
+        top: `${top}%`,
+        color: block.color,
+        fontStyle: block.italic ? "italic" : "normal",
+        fontWeight: block.weight,
+        zIndex: owner.zIndex + 10,
+      }}
+      data-dialogue-layout-id={`text:${block.id}`}
+      data-dialogue-text={block.id}
+      onPointerDown={(event) => {
+        event.stopPropagation()
+        onSelect()
+      }}
+    >
+      <p
+        contentEditable={selected}
+        suppressContentEditableWarning
+        onFocus={(event) => {
+          event.stopPropagation()
+          onSelect()
+          textEdit.current = { started: false }
+        }}
+        onInput={(event) => {
+          event.stopPropagation()
+          if (!textEdit.current || textEdit.current.started) return
+          textEdit.current.started = true
+          onInteractionStart()
+        }}
+        onBlur={(event) => {
+          const current = textEdit.current
+          textEdit.current = null
+          if (!current?.started) return
+          onChange({ text: event.currentTarget.innerText })
+          onInteractionEnd()
+        }}
+      >
+        {block.text}
+      </p>
     </div>
   )
 }
@@ -468,6 +544,9 @@ function DropPage({
   onChangeBubble,
   onMoveBubble,
   onDeleteBubble,
+  onChangeDialogueText,
+  onSelectDialogueText,
+  onBubbleGapsChange,
   onInteractionStart,
   onInteractionEnd,
 }: {
@@ -488,33 +567,53 @@ function DropPage({
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
+  onChangeDialogueText: (id: string, patch: Partial<DialogueTextBlock>) => void
+  onSelectDialogueText: (afterBubbleId: string) => void
+  onBubbleGapsChange: (page: number, gaps: Record<string, number>) => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
 }) {
   const pageRef = useRef<HTMLElement>(null)
-  const [speechTops, setSpeechTops] = useState<Record<string, number>>({})
+  const [layoutTops, setLayoutTops] = useState<Record<string, number>>({})
   const options = document.options
   const pageBubbles = useMemo(() => document.speechBubbles
     .filter((bubble) => bubble.page === page)
     .sort((left, right) => left.y - right.y || left.zIndex - right.zIndex), [document.speechBubbles, page])
+  const pageDialogueTexts = useMemo(() => document.dialogueTexts.filter((block) => block.page === page), [document.dialogueTexts, page])
+  const pageLayoutItems = useMemo(() => pageBubbles.flatMap<DialogueLayoutItem>((bubble) => [
+    { id: `bubble:${bubble.id}`, kind: "bubble", bubble, y: bubble.y, zIndex: bubble.zIndex },
+    ...pageDialogueTexts
+      .filter((block) => block.afterBubbleId === bubble.id)
+      .map((block) => ({ id: `text:${block.id}`, kind: "text" as const, block, owner: bubble, y: bubble.y, zIndex: bubble.zIndex + 0.1 })),
+  ]).sort((left, right) => left.y - right.y || left.zIndex - right.zIndex), [pageBubbles, pageDialogueTexts])
   const measureSpeechBubbles = useCallback(() => {
     const pageElement = pageRef.current
     if (!pageElement?.clientHeight) return
-    const elements = Array.from(pageElement.querySelectorAll<HTMLElement>("[data-speech-bubble]"))
-    const heights = new Map(elements.map((element) => [element.dataset.speechBubble ?? "", (element.getBoundingClientRect().height / pageElement.clientHeight) * 100]))
-    const next = resolveSpeechBubbleTops(pageBubbles.map((bubble) => ({
-      id: bubble.id,
-      y: bubble.y,
-      zIndex: bubble.zIndex,
-      height: heights.get(bubble.id) ?? 0,
+    const elements = Array.from(pageElement.querySelectorAll<HTMLElement>("[data-dialogue-layout-id]"))
+    const heights = new Map(elements.map((element) => [element.dataset.dialogueLayoutId ?? "", (element.getBoundingClientRect().height / pageElement.clientHeight) * 100]))
+    const next = resolveSpeechBubbleTops(pageLayoutItems.map((item) => ({
+      id: item.id,
+      y: item.y,
+      zIndex: item.zIndex,
+      height: heights.get(item.id) ?? 0,
     })))
-    setSpeechTops((current) => {
+    setLayoutTops((current) => {
       const ids = Object.keys(next)
       const unchanged = ids.length === Object.keys(current).length
         && ids.every((id) => Math.abs((current[id] ?? -100) - next[id]) < 0.05)
       return unchanged ? current : next
     })
-  }, [pageBubbles])
+    const gaps = Object.fromEntries(pageBubbles.map((bubble) => {
+      const id = `bubble:${bubble.id}`
+      const index = pageLayoutItems.findIndex((item) => item.id === id)
+      const nextItem = pageLayoutItems[index + 1]
+      const bottom = (next[id] ?? bubble.y) + (heights.get(id) ?? 0)
+      const nextTop = nextItem ? next[nextItem.id] : DIALOGUE_LAYOUT_MAX_BOTTOM
+      const reservedGap = nextItem ? DIALOGUE_LAYOUT_GAP * 2 : DIALOGUE_LAYOUT_GAP
+      return [bubble.id, Math.max(0, nextTop - bottom - reservedGap)]
+    }))
+    onBubbleGapsChange(page, gaps)
+  }, [onBubbleGapsChange, page, pageBubbles, pageLayoutItems])
 
   useLayoutEffect(() => {
     const pageElement = pageRef.current
@@ -522,7 +621,7 @@ function DropPage({
     measureSpeechBubbles()
     const observer = new ResizeObserver(measureSpeechBubbles)
     observer.observe(pageElement)
-    pageElement.querySelectorAll<HTMLElement>("[data-speech-bubble]").forEach((element) => observer.observe(element))
+    pageElement.querySelectorAll<HTMLElement>("[data-dialogue-layout-id]").forEach((element) => observer.observe(element))
     let cancelled = false
     void window.document.fonts.ready.then(() => {
       if (!cancelled) measureSpeechBubbles()
@@ -582,17 +681,29 @@ function DropPage({
             onInteractionEnd={onInteractionEnd}
           />
         ))}
-      {pageBubbles.map((bubble) => (
+      {pageLayoutItems.map((item) => item.kind === "bubble" ? (
           <SpeechBubbleItem
-            key={bubble.id}
-            bubble={bubble}
-            top={speechTops[bubble.id] ?? bubble.y}
-            profile={document.members.find((member) => member.id === bubble.profileId) ?? null}
-            selected={bubble.id === selectedBubbleId}
-            onSelect={() => onSelectBubble(bubble.id)}
-            onChange={(patch) => onChangeBubble(bubble.id, patch)}
-            onMove={(direction) => onMoveBubble(bubble.id, direction)}
-            onDelete={() => onDeleteBubble(bubble.id)}
+            key={item.id}
+            bubble={item.bubble}
+            top={layoutTops[item.id] ?? item.bubble.y}
+            profile={document.members.find((member) => member.id === item.bubble.profileId) ?? null}
+            selected={item.bubble.id === selectedBubbleId}
+            onSelect={() => onSelectBubble(item.bubble.id)}
+            onChange={(patch) => onChangeBubble(item.bubble.id, patch)}
+            onMove={(direction) => onMoveBubble(item.bubble.id, direction)}
+            onDelete={() => onDeleteBubble(item.bubble.id)}
+            onInteractionStart={onInteractionStart}
+            onInteractionEnd={onInteractionEnd}
+          />
+        ) : (
+          <DialogueTextItem
+            key={item.id}
+            block={item.block}
+            owner={item.owner}
+            top={layoutTops[item.id] ?? item.owner.y}
+            selected={item.block.afterBubbleId === selectedBubbleId}
+            onSelect={() => onSelectDialogueText(item.block.afterBubbleId)}
+            onChange={(patch) => onChangeDialogueText(item.block.id, patch)}
             onInteractionStart={onInteractionStart}
             onInteractionEnd={onInteractionEnd}
           />
@@ -642,6 +753,9 @@ export function BookCanvas(props: Props) {
           onChangeBubble={props.onChangeBubble}
           onMoveBubble={props.onMoveBubble}
           onDeleteBubble={props.onDeleteBubble}
+          onChangeDialogueText={props.onChangeDialogueText}
+          onSelectDialogueText={props.onSelectDialogueText}
+          onBubbleGapsChange={props.onBubbleGapsChange}
           onInteractionStart={props.onInteractionStart}
           onInteractionEnd={props.onInteractionEnd}
         >
@@ -681,6 +795,9 @@ export function BookCanvas(props: Props) {
             onChangeBubble={props.onChangeBubble}
             onMoveBubble={props.onMoveBubble}
             onDeleteBubble={props.onDeleteBubble}
+            onChangeDialogueText={props.onChangeDialogueText}
+            onSelectDialogueText={props.onSelectDialogueText}
+            onBubbleGapsChange={props.onBubbleGapsChange}
             onInteractionStart={props.onInteractionStart}
             onInteractionEnd={props.onInteractionEnd}
           >

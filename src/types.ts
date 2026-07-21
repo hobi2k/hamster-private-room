@@ -62,6 +62,16 @@ export type SpeechBubble = {
   zIndex: number
 }
 
+export type DialogueTextBlock = {
+  id: string
+  page: number
+  afterBubbleId: string
+  text: string
+  color: string
+  italic: boolean
+  weight: number
+}
+
 export type FooterNote = {
   title: string
   subtitle: string
@@ -108,6 +118,7 @@ export type BookDocument = {
   images: ImageLayer[]
   members: MemberProfile[]
   speechBubbles: SpeechBubble[]
+  dialogueTexts: DialogueTextBlock[]
   marks: TextMark[]
   footers: Record<number, FooterNote>
   updatedAt: string

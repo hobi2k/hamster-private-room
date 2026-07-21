@@ -26,9 +26,11 @@ import type { ChangeEvent, CSSProperties, PointerEvent, ReactNode } from "react"
 import { DEFAULT_OPTIONS, THEMES } from "../data/themes"
 import { avatarFrame, avatarStyle, clampAvatarCenter } from "../lib/avatar"
 import { fitImageToPage } from "../lib/image"
+import { estimateDialogueTextHeight } from "../lib/speech"
 import type {
   BookDocument,
   BookOptions,
+  DialogueTextBlock,
   EditorTab,
   ExportMode,
   FooterNote,
@@ -48,6 +50,8 @@ type Props = {
   selectedPage: number
   selectedImage: ImageLayer | null
   selectedBubble: SpeechBubble | null
+  selectedDialogueText: DialogueTextBlock | null
+  selectedBubbleGap: number
   textSelection: TextSelection | null
   members: MemberProfile[]
   customPresets: ThemePreset[]
@@ -72,6 +76,9 @@ type Props = {
   onPatchBubble: (patch: Partial<SpeechBubble>) => void
   onMoveBubble: (direction: -1 | 1) => void
   onDeleteBubble: () => void
+  onAddDialogueText: (text: string) => void
+  onPatchDialogueText: (patch: Partial<DialogueTextBlock>) => void
+  onDeleteDialogueText: () => void
   onPatchFooter: (patch: Partial<FooterNote>) => void
   onApplyFooterAll: () => void
   onDeleteFooter: (all: boolean) => void
@@ -509,8 +516,11 @@ function DialoguePanel(props: Props) {
   const [selectedMemberId, setSelectedMemberId] = useState(props.members[0]?.id ?? "")
   const [message, setMessage] = useState("")
   const [secondaryText, setSecondaryText] = useState("")
+  const [betweenText, setBetweenText] = useState("")
   const [side, setSide] = useState<SpeechBubble["side"]>("left")
   const selectedMember = props.members.find((member) => member.id === selectedMemberId) ?? null
+  const requiredBetweenSpace = betweenText.trim() ? estimateDialogueTextHeight(betweenText.trim(), props.document.options) : 0
+  const canAddBetweenText = Boolean(betweenText.trim()) && props.selectedBubbleGap >= requiredBetweenSpace
 
   useEffect(() => {
     if (selectedMember || !props.members.length) return
@@ -522,6 +532,10 @@ function DialoguePanel(props: Props) {
     if (profileId && props.members.some((member) => member.id === profileId)) setSelectedMemberId(profileId)
     if (props.selectedBubble) panelRef.current?.scrollTo({ top: 0, behavior: "smooth" })
   }, [props.members, props.selectedBubble])
+
+  useEffect(() => {
+    setBetweenText("")
+  }, [props.selectedBubble?.id])
 
   const addMember = () => {
     setSelectedMemberId(props.onAddMember())
@@ -686,6 +700,62 @@ function DialoguePanel(props: Props) {
             <button className="danger-button" type="button" onClick={props.onDeleteBubble}>
               <Trash2 aria-hidden="true" /> 말풍선 삭제
             </button>
+          </Section>
+        ) : null}
+
+        {props.selectedBubble ? (
+          <Section title="말풍선 사이 글" className="dialogue-text-section">
+            {props.selectedDialogueText ? (
+              <>
+                <Field label="사이 글">
+                  <textarea
+                    className="compact-textarea"
+                    value={props.selectedDialogueText.text}
+                    onChange={(event) => props.onPatchDialogueText({ text: event.target.value })}
+                  />
+                </Field>
+                <div className="two-column-fields">
+                  <ColorInput label="글자색" value={props.selectedDialogueText.color} onChange={(color) => props.onPatchDialogueText({ color })} />
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={props.selectedDialogueText.italic}
+                      onChange={(event) => props.onPatchDialogueText({ italic: event.target.checked })}
+                    />
+                    <span>기울임</span>
+                  </label>
+                </div>
+                <button className="danger-button" type="button" onClick={props.onDeleteDialogueText}>
+                  <Trash2 aria-hidden="true" /> 사이 글 삭제
+                </button>
+              </>
+            ) : (
+              <>
+                <Field label="사이 글">
+                  <textarea
+                    className="compact-textarea"
+                    value={betweenText}
+                    onChange={(event) => setBetweenText(event.target.value)}
+                    placeholder="말풍선 사이에 넣을 문장"
+                  />
+                </Field>
+                <div className={canAddBetweenText ? "dialogue-space-status is-ready" : "dialogue-space-status"} role="status">
+                  <span>{canAddBetweenText ? "자리 있음" : "자리 부족"}</span>
+                  <strong>{props.selectedBubbleGap.toFixed(1)}%</strong>
+                </div>
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={!canAddBetweenText}
+                  onClick={() => {
+                    props.onAddDialogueText(betweenText)
+                    setBetweenText("")
+                  }}
+                >
+                  <Type aria-hidden="true" /> 사이에 글 넣기
+                </button>
+              </>
+            )}
           </Section>
         ) : null}
       </div>
