@@ -113,6 +113,16 @@ export type BookDocument = {
   updatedAt: string
 }
 
+export type BookSlot = {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  bodyLength: number
+  backgroundColor: string
+  accentColor: string
+}
+
 export type ThemePreset = {
   id: string
   name: string

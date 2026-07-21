@@ -1,14 +1,19 @@
-import { ArrowRight, FilePlus2, FolderOpen, Upload } from "lucide-react"
+import { ArrowRight, BookOpen, Clock3, FilePlus2, FolderOpen, Trash2, Upload } from "lucide-react"
 import { useRef } from "react"
 import type { CSSProperties } from "react"
+import type { BookSlot } from "../types"
+
 type Props = {
-  hasDraft: boolean
+  books: BookSlot[]
+  activeBookId: string
   onNew: () => void
   onContinue: () => void
+  onOpen: (id: string) => void
+  onDelete: (id: string) => void
   onImport: (file: File) => void
 }
 
-export function HomeScreen({ hasDraft, onNew, onContinue, onImport }: Props) {
+export function HomeScreen({ books, activeBookId, onNew, onContinue, onOpen, onDelete, onImport }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const style = {
     "--hamster-sprite": `url(${import.meta.env.BASE_URL}assets/hamster-walk.png)`,
@@ -63,13 +68,53 @@ export function HomeScreen({ hasDraft, onNew, onContinue, onImport }: Props) {
         </div>
       </section>
 
+      <section className="home-library" aria-labelledby="library-title">
+        <header className="home-library-header">
+          <div>
+            <span>내 책장</span>
+            <h2 id="library-title">저장한 책</h2>
+          </div>
+          <strong>{books.length}권</strong>
+        </header>
+        {books.length ? (
+          <div className="book-slot-grid">
+            {books.map((book) => (
+              <article className={book.id === activeBookId ? "book-slot is-active" : "book-slot"} key={book.id}>
+                <button className="book-slot-open" type="button" onClick={() => onOpen(book.id)} aria-label={`${book.title} 열기`}>
+                  <span
+                    className="book-slot-cover"
+                    style={{ "--slot-paper": book.backgroundColor, "--slot-accent": book.accentColor } as CSSProperties}
+                    aria-hidden="true"
+                  >
+                    <BookOpen />
+                  </span>
+                  <span className="book-slot-copy">
+                    <strong>{book.title}</strong>
+                    <small><Clock3 aria-hidden="true" /> {formatUpdatedAt(book.updatedAt)} · {book.bodyLength.toLocaleString("ko-KR")}자</small>
+                  </span>
+                  {book.id === activeBookId ? <span className="book-slot-current">최근 작업</span> : <ArrowRight aria-hidden="true" />}
+                </button>
+                <button className="book-slot-delete" type="button" onClick={() => onDelete(book.id)} title={`${book.title} 삭제`} aria-label={`${book.title} 삭제`}>
+                  <Trash2 aria-hidden="true" />
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="book-slot-empty">
+            <BookOpen aria-hidden="true" />
+            <span><strong>아직 저장한 책이 없어요.</strong><small>새 책을 만들면 여기에 한 권씩 놓여요.</small></span>
+          </div>
+        )}
+      </section>
+
       <section className="home-actions" aria-label="책 작업 시작">
         <button className="home-action is-primary" type="button" onClick={onNew}>
           <span className="home-action-icon"><FilePlus2 aria-hidden="true" /></span>
           <span className="home-action-copy"><strong>새 책 만들기</strong><small>새 이불 깔고 시작하기</small></span>
           <ArrowRight aria-hidden="true" />
         </button>
-        <button className="home-action" type="button" onClick={onContinue} disabled={!hasDraft}>
+        <button className="home-action" type="button" onClick={onContinue} disabled={!books.length}>
           <span className="home-action-icon"><FolderOpen aria-hidden="true" /></span>
           <span className="home-action-copy"><strong>최근 작업 이어쓰기</strong><small>덮어둔 이불 다시 펴기</small></span>
           <ArrowRight aria-hidden="true" />
@@ -89,4 +134,15 @@ export function HomeScreen({ hasDraft, onNew, onContinue, onImport }: Props) {
       </section>
     </main>
   )
+}
+
+function formatUpdatedAt(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "수정 시각 없음"
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)
 }

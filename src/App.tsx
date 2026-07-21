@@ -8,11 +8,22 @@ import { ToolRail } from "./components/ToolRail"
 import { DEFAULT_OPTIONS } from "./data/themes"
 import { copyBookPage, exportBook } from "./lib/export"
 import { fitImageToPage } from "./lib/image"
+import {
+  ACTIVE_BOOK_KEY,
+  bookStorageKey,
+  createBookSlot,
+  LEGACY_BOOK_ID,
+  LEGACY_DOCUMENT_KEY,
+  loadBookSlots,
+  saveBookSlots,
+  upsertBookSlot,
+} from "./lib/library"
 import { PAGE_BREAK, paginateText } from "./lib/pagination"
 import { moveSpeechBubble } from "./lib/speech"
 import type {
   BookDocument,
   BookOptions,
+  BookSlot,
   EditorTab,
   ExportMode,
   FooterNote,
@@ -25,7 +36,6 @@ import type {
   ToastState,
 } from "./types"
 
-const STORAGE_KEY = "hamster-private-room/document/v1"
 const PRESET_KEY = "hamster-private-room/presets/v1"
 const DEFAULT_BODY = `비가 오려는 오후였다. 창문 가장자리에는 아직 이름 없는 빛이 오래 머물렀다.
 
@@ -50,24 +60,28 @@ function createDocument(): BookDocument {
   }
 }
 
-function loadDocument() {
-  const saved = localStorage.getItem(STORAGE_KEY)
-  if (!saved) return createDocument()
+function normalizeDocument(parsed: Partial<BookDocument>) {
+  return {
+    ...createDocument(),
+    ...parsed,
+    options: { ...DEFAULT_OPTIONS, ...parsed.options },
+    images: Array.isArray(parsed.images) ? parsed.images : [],
+    members: normalizeMembers(parsed.members),
+    speechBubbles: Array.isArray(parsed.speechBubbles) ? parsed.speechBubbles : [],
+    marks: Array.isArray(parsed.marks) ? parsed.marks : [],
+    footers: parsed.footers ?? {},
+  }
+}
+
+function loadStoredDocument(key: string) {
+  const saved = localStorage.getItem(key)
+  if (!saved) return null
   try {
     const parsed = JSON.parse(saved) as Partial<BookDocument>
-    if (parsed.version !== 1 || typeof parsed.body !== "string") return createDocument()
-    return {
-      ...createDocument(),
-      ...parsed,
-      options: { ...DEFAULT_OPTIONS, ...parsed.options },
-      images: Array.isArray(parsed.images) ? parsed.images : [],
-      members: normalizeMembers(parsed.members),
-      speechBubbles: Array.isArray(parsed.speechBubbles) ? parsed.speechBubbles : [],
-      marks: Array.isArray(parsed.marks) ? parsed.marks : [],
-      footers: parsed.footers ?? {},
-    }
+    if (parsed.version !== 1 || typeof parsed.body !== "string" || !parsed.options) return null
+    return normalizeDocument(parsed)
   } catch {
-    return createDocument()
+    return null
   }
 }
 
@@ -79,6 +93,35 @@ function normalizeMembers(members: BookDocument["members"] | undefined) {
     avatarX: member.avatarX ?? 50,
     avatarY: member.avatarY ?? 50,
   }))
+}
+
+function loadLibrary() {
+  const indexedSlots = loadBookSlots(localStorage)
+  const slots = indexedSlots.filter((slot) => loadStoredDocument(bookStorageKey(slot.id)))
+  if (slots.length) {
+    if (slots.length !== indexedSlots.length) saveBookSlots(localStorage, slots)
+    const requestedId = localStorage.getItem(ACTIVE_BOOK_KEY)
+    const activeBookId = slots.some((slot) => slot.id === requestedId) ? requestedId! : slots[0].id
+    return {
+      slots,
+      activeBookId,
+      document: loadStoredDocument(bookStorageKey(activeBookId)) ?? createDocument(),
+    }
+  }
+
+  const legacy = loadStoredDocument(LEGACY_DOCUMENT_KEY)
+  if (legacy) {
+    const migratedSlots = [createBookSlot(LEGACY_BOOK_ID, legacy)]
+    try {
+      saveBookSlots(localStorage, migratedSlots)
+      localStorage.setItem(ACTIVE_BOOK_KEY, LEGACY_BOOK_ID)
+    } catch {
+      // The original legacy document remains intact if its metadata cannot be written.
+    }
+    return { slots: migratedSlots, activeBookId: LEGACY_BOOK_ID, document: legacy }
+  }
+
+  return { slots: [] as BookSlot[], activeBookId: "", document: createDocument() }
 }
 
 function loadPresets() {
@@ -163,9 +206,11 @@ function downloadBookFile(documentState: BookDocument) {
 }
 
 export default function App() {
-  const [documentState, setDocumentState] = useState(loadDocument)
+  const [initialLibrary] = useState(loadLibrary)
+  const [documentState, setDocumentState] = useState(initialLibrary.document)
   const [screen, setScreen] = useState<"home" | "editor">("home")
-  const [hasSavedDraft, setHasSavedDraft] = useState(() => Boolean(localStorage.getItem(STORAGE_KEY)))
+  const [bookSlots, setBookSlots] = useState(initialLibrary.slots)
+  const [activeBookId, setActiveBookId] = useState(initialLibrary.activeBookId)
   const [activeTab, setActiveTab] = useState<EditorTab>("manuscript")
   const [selectedPage, setSelectedPage] = useState(documentState.options.coverMode === "none" ? 1 : 0)
   const [selectedPages, setSelectedPages] = useState(() => [documentState.options.coverMode === "none" ? 1 : 0])
@@ -183,11 +228,16 @@ export default function App() {
   const transientStart = useRef<BookDocument | null>(null)
   const transientChanged = useRef(false)
   const documentRef = useRef(documentState)
+  const bookSlotsRef = useRef(bookSlots)
   const [, refreshHistory] = useReducer((value: number) => value + 1, 0)
 
   useEffect(() => {
     documentRef.current = documentState
   }, [documentState])
+
+  useEffect(() => {
+    bookSlotsRef.current = bookSlots
+  }, [bookSlots])
 
   const notify = useCallback((message: string, tone: ToastState["tone"] = "default") => {
     setToast({ message, tone })
@@ -201,6 +251,15 @@ export default function App() {
       return { ...update(current), updatedAt: new Date().toISOString() }
     })
     refreshHistory()
+  }, [])
+
+  const persistBook = useCallback((id: string, nextDocument: BookDocument) => {
+    const nextSlots = upsertBookSlot(bookSlotsRef.current, id, nextDocument)
+    localStorage.setItem(bookStorageKey(id), JSON.stringify(nextDocument))
+    saveBookSlots(localStorage, nextSlots)
+    localStorage.setItem(ACTIVE_BOOK_KEY, id)
+    bookSlotsRef.current = nextSlots
+    setBookSlots(nextSlots)
   }, [])
 
   const updateTransient = useCallback((update: (current: BookDocument) => BookDocument) => {
@@ -246,19 +305,18 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (screen !== "editor") return
+    if (screen !== "editor" || !activeBookId) return
     setSaveStatus("saving")
     const timeout = window.setTimeout(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(documentState))
-        setHasSavedDraft(true)
+        persistBook(activeBookId, documentState)
         setSaveStatus("saved")
       } catch {
         setSaveStatus("error")
       }
     }, 420)
     return () => window.clearTimeout(timeout)
-  }, [documentState, screen])
+  }, [activeBookId, documentState, persistBook, screen])
 
   useEffect(() => {
     localStorage.setItem(PRESET_KEY, JSON.stringify(customPresets))
@@ -644,10 +702,30 @@ export default function App() {
     patchOptions({ coverImage, coverMode: documentState.options.coverMode === "none" ? "image-text" : documentState.options.coverMode })
   }
 
+  const activateBook = (id: string, nextDocument: BookDocument, message: string) => {
+    const firstPage = nextDocument.options.coverMode === "none" ? 1 : 0
+    past.current = []
+    future.current = []
+    transientStart.current = null
+    transientChanged.current = false
+    setActiveBookId(id)
+    setDocumentState(nextDocument)
+    setSelectedPage(firstPage)
+    setSelectedPages([firstPage])
+    setSelectedImageId("")
+    setSelectedBubbleId("")
+    setTextSelection(null)
+    setActiveTab("manuscript")
+    setMobilePanelOpen(false)
+    setScreen("editor")
+    notify(message, "success")
+    refreshHistory()
+  }
+
   const saveTemporary = () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(documentState))
-      setHasSavedDraft(true)
+      if (!activeBookId) throw new Error("missing book")
+      persistBook(activeBookId, documentState)
       setSaveStatus("saved")
       notify("브라우저에 폭신하게 담아뒀어요.", "success")
     } catch {
@@ -659,24 +737,10 @@ export default function App() {
     try {
       const parsed = JSON.parse(await file.text()) as BookDocument
       if (parsed.version !== 1 || typeof parsed.body !== "string" || !parsed.options) throw new Error("invalid")
-      commit(() => ({
-        ...createDocument(),
-        ...parsed,
-        options: { ...DEFAULT_OPTIONS, ...parsed.options },
-        images: Array.isArray(parsed.images) ? parsed.images : [],
-        members: normalizeMembers(parsed.members),
-        speechBubbles: Array.isArray(parsed.speechBubbles) ? parsed.speechBubbles : [],
-        marks: Array.isArray(parsed.marks) ? parsed.marks : [],
-        footers: parsed.footers ?? {},
-      }))
-      setSelectedImageId("")
-      setSelectedBubbleId("")
-      setTextSelection(null)
-      setSelectedPage(parsed.options.coverMode === "none" ? 1 : 0)
-      setSelectedPages([parsed.options.coverMode === "none" ? 1 : 0])
-      setHasSavedDraft(true)
-      setScreen("editor")
-      notify("작업 파일을 불러왔어요.", "success")
+      const imported = { ...normalizeDocument(parsed), updatedAt: new Date().toISOString() }
+      const id = `book-${crypto.randomUUID()}`
+      persistBook(id, imported)
+      activateBook(id, imported, "작업 파일을 새 책으로 불러왔어요.")
     } catch {
       notify("이 앱에서 만든 작업 파일인지 확인해 주세요.", "warn")
     }
@@ -744,38 +808,59 @@ export default function App() {
     next.title = "제목 없는 책"
     next.body = ""
     next.options = { ...next.options, coverTitle: "제목 없는 책", coverSubtitle: "" }
-    past.current = []
-    future.current = []
-    setDocumentState(next)
-    setSelectedPage(0)
-    setSelectedPages([0])
-    setSelectedImageId("")
-    setSelectedBubbleId("")
-    setTextSelection(null)
-    setActiveTab("manuscript")
-    setScreen("editor")
-    notify("새 이불을 폈어요. 첫 문장을 적어볼까요?", "success")
-    refreshHistory()
+    const id = `book-${crypto.randomUUID()}`
+    try {
+      persistBook(id, next)
+      activateBook(id, next, "새 이불을 폈어요. 첫 문장을 적어볼까요?")
+    } catch {
+      notify("브라우저 저장 공간이 부족해 새 책을 만들지 못했어요.", "warn")
+    }
+  }
+
+  const openBook = (id: string) => {
+    const saved = loadStoredDocument(bookStorageKey(id))
+    if (!saved) {
+      notify("이 책의 저장 내용을 찾지 못했어요.", "warn")
+      return
+    }
+    localStorage.setItem(ACTIVE_BOOK_KEY, id)
+    activateBook(id, saved, "이어서 폭신하게 써 볼까요?")
   }
 
   const continueDraft = () => {
-    if (!hasSavedDraft) return
-    const saved = loadDocument()
-    setDocumentState(saved)
-    const firstPage = saved.options.coverMode === "none" ? 1 : 0
-    setSelectedPage(firstPage)
-    setSelectedPages([firstPage])
-    setSelectedImageId("")
-    setSelectedBubbleId("")
-    setTextSelection(null)
-    setScreen("editor")
-    notify("이어서 폭신하게 써 볼까요?", "success")
+    const id = bookSlots.some((slot) => slot.id === activeBookId) ? activeBookId : bookSlots[0]?.id
+    if (id) openBook(id)
+  }
+
+  const deleteBook = (id: string) => {
+    const slot = bookSlotsRef.current.find((book) => book.id === id)
+    if (!slot || !window.confirm(`'${slot.title}'을(를) 책장에서 삭제할까요?`)) return
+    const nextSlots = bookSlotsRef.current.filter((book) => book.id !== id)
+    try {
+      saveBookSlots(localStorage, nextSlots)
+      localStorage.removeItem(bookStorageKey(id))
+      bookSlotsRef.current = nextSlots
+      setBookSlots(nextSlots)
+      if (id === activeBookId) {
+        const nextActiveId = nextSlots[0]?.id ?? ""
+        setActiveBookId(nextActiveId)
+        if (nextActiveId) {
+          localStorage.setItem(ACTIVE_BOOK_KEY, nextActiveId)
+          setDocumentState(loadStoredDocument(bookStorageKey(nextActiveId)) ?? createDocument())
+        } else {
+          localStorage.removeItem(ACTIVE_BOOK_KEY)
+          setDocumentState(createDocument())
+        }
+      }
+      notify("책장에서 한 권을 비웠어요.", "success")
+    } catch {
+      notify("책을 삭제하지 못했어요. 다시 시도해 주세요.", "warn")
+    }
   }
 
   const returnHome = () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(documentState))
-      setHasSavedDraft(true)
+      if (activeBookId) persistBook(activeBookId, documentState)
     } catch {
       setSaveStatus("error")
     }
@@ -786,9 +871,12 @@ export default function App() {
   if (screen === "home") {
     return (
       <HomeScreen
-        hasDraft={hasSavedDraft}
+        books={bookSlots}
+        activeBookId={activeBookId}
         onNew={createNewBook}
         onContinue={continueDraft}
+        onOpen={openBook}
+        onDelete={deleteBook}
         onImport={importProject}
       />
     )
