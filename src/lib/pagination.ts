@@ -1,9 +1,19 @@
 import type { BookOptions, PageSlice, TextMark } from "../types"
 
 const PAGE_RATIO = 1.414
+export const PAGE_BREAK = "\f"
 
 export function paginateText(text: string, options: BookOptions): PageSlice[] {
-  if (!text) return [{ text: "", start: 0, end: 0 }]
+  let offset = 0
+  return text.split(PAGE_BREAK).flatMap((section, index, sections) => {
+    const pages = paginateSection(section, options, offset)
+    offset += section.length + (index < sections.length - 1 ? PAGE_BREAK.length : 0)
+    return pages
+  })
+}
+
+function paginateSection(text: string, options: BookOptions, offset: number): PageSlice[] {
+  if (!text) return [{ text: "", start: offset, end: offset }]
   const contentWidth = Math.max(120, options.pageWidth - options.paddingX * 2)
   const pageHeight = options.pageWidth * PAGE_RATIO
   const contentHeight = Math.max(160, pageHeight - options.paddingY - pageHeight * 0.11)
@@ -53,15 +63,15 @@ export function paginateText(text: string, options: BookOptions): PageSlice[] {
     }
 
     if (index >= text.length) {
-      slices.push({ text: text.slice(start), start, end: text.length })
+      slices.push({ text: text.slice(start), start: offset + start, end: offset + text.length })
       break
     }
     const end = lastBreak > start && index - lastBreak <= 2 ? lastBreak : Math.max(start + 1, index)
-    slices.push({ text: text.slice(start, end), start, end })
+    slices.push({ text: text.slice(start, end), start: offset + start, end: offset + end })
     start = end
   }
 
-  return slices.length ? slices : [{ text: "", start: 0, end: 0 }]
+  return slices.length ? slices : [{ text: "", start: offset, end: offset }]
 }
 
 function characterUnits(character: string, options: BookOptions) {

@@ -52,6 +52,10 @@ export type SpeechBubble = {
   x: number
   y: number
   width: number
+  autoWidth?: boolean
+  textScale?: number
+  secondaryTextScale?: number
+  showName?: boolean
   side: "left" | "right"
   bubbleColor: string
   textColor: string

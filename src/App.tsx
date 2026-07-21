@@ -1,4 +1,4 @@
-import { Check, House, Menu, MousePointer2, Save, Trash2, X } from "lucide-react"
+import { Check, House, Menu, MousePointer2, Plus, Save, Trash2, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { BookCanvas } from "./components/BookCanvas"
 import { HamsterMascot } from "./components/HamsterMascot"
@@ -8,7 +8,8 @@ import { ToolRail } from "./components/ToolRail"
 import { DEFAULT_OPTIONS } from "./data/themes"
 import { copyBookPage, exportBook } from "./lib/export"
 import { fitImageToPage } from "./lib/image"
-import { paginateText } from "./lib/pagination"
+import { PAGE_BREAK, paginateText } from "./lib/pagination"
+import { moveSpeechBubble } from "./lib/speech"
 import type {
   BookDocument,
   BookOptions,
@@ -124,10 +125,18 @@ function imageAspectRatio(src: string) {
 }
 
 function removeBodyRanges(documentState: BookDocument, ranges: Array<{ start: number; end: number }>) {
-  const body = ranges.reduceRight((text, range) => `${text.slice(0, range.start)}${text.slice(range.end)}`, documentState.body)
-  const mapOffset = (offset: number) => offset - ranges.reduce((removed, range) => removed + Math.max(0, Math.min(offset, range.end) - range.start), 0)
+  const mergedRanges = [...ranges]
+    .sort((left, right) => left.start - right.start)
+    .reduce<Array<{ start: number; end: number }>>((merged, range) => {
+      const previous = merged.at(-1)
+      if (!previous || range.start > previous.end) return [...merged, range]
+      previous.end = Math.max(previous.end, range.end)
+      return merged
+    }, [])
+  const body = mergedRanges.reduceRight((text, range) => `${text.slice(0, range.start)}${text.slice(range.end)}`, documentState.body)
+  const mapOffset = (offset: number) => offset - mergedRanges.reduce((removed, range) => removed + Math.max(0, Math.min(offset, range.end) - range.start), 0)
   const marks = documentState.marks.flatMap((mark) => {
-    const segments = ranges.reduce<Array<{ start: number; end: number }>>((current, range) => current.flatMap((segment) => {
+    const segments = mergedRanges.reduce<Array<{ start: number; end: number }>>((current, range) => current.flatMap((segment) => {
       if (range.end <= segment.start || range.start >= segment.end) return segment
       return [
         { start: segment.start, end: Math.min(segment.end, range.start) },
@@ -274,7 +283,11 @@ export default function App() {
     const pageNumbers = [...selectedPages].sort((left, right) => left - right)
     if (pageNumbers.length < 2) return
     const contentPages = pageNumbers.filter((page) => page > 0)
-    const ranges = contentPages.map((page) => pages[page - 1]).filter(Boolean).map((page) => ({ start: page.start, end: page.end }))
+    const ranges = contentPages.map((page) => pages[page - 1]).filter(Boolean).map((page) => {
+      if (documentState.body[page.end] === PAGE_BREAK) return { start: page.start, end: page.end + 1 }
+      if (page.start > 0 && documentState.body[page.start - 1] === PAGE_BREAK) return { start: page.start - 1, end: page.end }
+      return { start: page.start, end: page.end }
+    })
     const removed = new Set(pageNumbers)
     const remapPage = (page: number) => page === 0 ? 0 : page - contentPages.filter((deleted) => deleted < page).length
     commit((current) => {
@@ -297,7 +310,7 @@ export default function App() {
     setSelectedBubbleId("")
     setTextSelection(null)
     notify(`${pageNumbers.length}개 페이지를 지웠어요. 실행 취소로 되돌릴 수 있어요.`, "success")
-  }, [commit, notify, pages, selectedPages])
+  }, [commit, documentState.body, notify, pages, selectedPages])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -342,6 +355,20 @@ export default function App() {
 
   const patchOptions = (patch: Partial<BookOptions>) => {
     commit((current) => ({ ...current, options: { ...current.options, ...patch } }))
+  }
+
+  const addPage = () => {
+    const nextPage = maxPage + 1
+    commit((current) => ({ ...current, body: `${current.body}${PAGE_BREAK}` }))
+    setSelectedPage(nextPage)
+    setSelectedPages([nextPage])
+    setSelectedImageId("")
+    setSelectedBubbleId("")
+    setTextSelection(null)
+    notify(`${nextPage}쪽을 추가했어요.`, "success")
+    window.requestAnimationFrame(() => {
+      window.document.querySelector(`[data-page-index="${nextPage}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+    })
   }
 
   const replacePageText = (start: number, end: number, text: string) => {
@@ -490,6 +517,10 @@ export default function App() {
             x: side === "left" ? 10 : 38,
             y: 18 + (count * 10) % 54,
             width: 52,
+            autoWidth: true,
+            textScale: 100,
+            secondaryTextScale: 100,
+            showName: true,
             side,
             bubbleColor: member.bubbleColor,
             textColor: member.textColor,
@@ -519,6 +550,13 @@ export default function App() {
     })
     if (transient) updateTransient(update)
     else commit(update)
+  }
+
+  const moveBubble = (id: string, direction: -1 | 1) => {
+    commit((current) => {
+      const speechBubbles = moveSpeechBubble(current.speechBubbles, id, direction)
+      return speechBubbles === current.speechBubbles ? current : { ...current, speechBubbles }
+    })
   }
 
   const deleteBubble = (id = selectedBubbleId) => {
@@ -794,6 +832,7 @@ export default function App() {
         onDeleteMember={deleteMember}
         onAddBubble={addBubble}
         onPatchBubble={(patch) => selectedBubble && patchBubble(selectedBubble.id, patch)}
+        onMoveBubble={(direction) => selectedBubble && moveBubble(selectedBubble.id, direction)}
         onDeleteBubble={() => deleteBubble()}
         onPatchFooter={patchFooter}
         onApplyFooterAll={applyFooterAll}
@@ -828,6 +867,9 @@ export default function App() {
               <strong>{documentState.title || "제목 없는 책"}</strong>
             </div>
           )}
+          <button className="add-page-button" type="button" onClick={addPage} title="마지막에 빈 페이지 추가">
+            <Plus aria-hidden="true" /> <span>페이지 추가</span>
+          </button>
           <div className="workspace-status">
             <span>{pageCount}장</span>
             <span className={`save-state is-${saveStatus}`}>
@@ -860,6 +902,7 @@ export default function App() {
             onChangeImage={(id, patch) => patchImage(id, patch, true)}
             onDeleteImage={deleteImage}
             onChangeBubble={(id, patch) => patchBubble(id, patch, true)}
+            onMoveBubble={moveBubble}
             onDeleteBubble={deleteBubble}
             onChangePageText={replacePageText}
             onSelectText={setTextSelection}

@@ -1,4 +1,6 @@
 import {
+  ArrowDown,
+  ArrowUp,
   Bold,
   Camera,
   Check,
@@ -68,6 +70,7 @@ type Props = {
   onDeleteMember: (id: string) => void
   onAddBubble: (profileId: string, text: string, secondaryText: string, side: SpeechBubble["side"]) => void
   onPatchBubble: (patch: Partial<SpeechBubble>) => void
+  onMoveBubble: (direction: -1 | 1) => void
   onDeleteBubble: () => void
   onPatchFooter: (patch: Partial<FooterNote>) => void
   onApplyFooterAll: () => void
@@ -629,9 +632,51 @@ function DialoguePanel(props: Props) {
             <Field label="작은 보조 문장">
               <input value={props.selectedBubble.secondaryText} onChange={(event) => props.onPatchBubble({ secondaryText: event.target.value })} />
             </Field>
-            <RangeField label="가로 위치" min={-10} max={90} value={props.selectedBubble.x} suffix="%" onChange={(x) => props.onPatchBubble({ x })} />
-            <RangeField label="세로 위치" min={0} max={92} value={props.selectedBubble.y} suffix="%" onChange={(y) => props.onPatchBubble({ y })} />
-            <RangeField label="너비" min={24} max={88} value={props.selectedBubble.width} suffix="%" onChange={(width) => props.onPatchBubble({ width })} />
+            <div className="bubble-move-buttons" role="group" aria-label="말풍선 세로 순서">
+              <button className="secondary-button" type="button" onClick={() => props.onMoveBubble(-1)}>
+                <ArrowUp aria-hidden="true" /> 위로
+              </button>
+              <button className="secondary-button" type="button" onClick={() => props.onMoveBubble(1)}>
+                <ArrowDown aria-hidden="true" /> 아래로
+              </button>
+            </div>
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={props.selectedBubble.autoWidth !== false}
+                onChange={(event) => props.onPatchBubble({ autoWidth: event.target.checked })}
+              />
+              <span>가장 긴 줄에 맞춰 너비 자동 조정</span>
+            </label>
+            {props.selectedBubble.autoWidth === false ? (
+              <RangeField label="말풍선 너비" min={24} max={88} value={props.selectedBubble.width} suffix="%" onChange={(width) => props.onPatchBubble({ width })} />
+            ) : null}
+            <RangeField
+              label="대사 글자 크기"
+              min={60}
+              max={180}
+              step={5}
+              value={props.selectedBubble.textScale ?? 100}
+              suffix="%"
+              onChange={(textScale) => props.onPatchBubble({ textScale })}
+            />
+            <RangeField
+              label="보조문장 글자 크기"
+              min={60}
+              max={180}
+              step={5}
+              value={props.selectedBubble.secondaryTextScale ?? 100}
+              suffix="%"
+              onChange={(secondaryTextScale) => props.onPatchBubble({ secondaryTextScale })}
+            />
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={props.selectedBubble.showName !== false}
+                onChange={(event) => props.onPatchBubble({ showName: event.target.checked })}
+              />
+              <span>이름 표시</span>
+            </label>
             <Field label="프로필 위치">
               <select value={props.selectedBubble.side} onChange={(event) => props.onPatchBubble({ side: event.target.value as SpeechBubble["side"] })}>
                 <option value="left">왼쪽</option>

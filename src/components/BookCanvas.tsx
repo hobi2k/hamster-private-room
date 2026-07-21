@@ -1,8 +1,9 @@
-import { Check, RotateCw, Trash2 } from "lucide-react"
+import { ArrowDown, ArrowUp, Check, RotateCw, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
 import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
+import { speechBubbleWidth } from "../lib/speech"
 import type { BookDocument, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
@@ -20,6 +21,7 @@ type Props = {
   onChangeImage: (id: string, patch: Partial<ImageLayer>) => void
   onDeleteImage: (id: string) => void
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
+  onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
   onChangePageText: (start: number, end: number, text: string) => void
   onSelectText: (selection: TextSelection) => void
@@ -35,14 +37,6 @@ type PointerSession = {
   pageRect: DOMRect
   layer: ImageLayer
   startAngle: number
-}
-
-type BubblePointerSession = {
-  id: string
-  startX: number
-  startY: number
-  pageRect: DOMRect
-  bubble: SpeechBubble
 }
 
 function TextContent({ document, page }: { document: BookDocument; page: PageSlice }) {
@@ -335,6 +329,7 @@ function SpeechBubbleItem({
   selected,
   onSelect,
   onChange,
+  onMove,
   onDelete,
   onInteractionStart,
   onInteractionEnd,
@@ -344,54 +339,16 @@ function SpeechBubbleItem({
   selected: boolean
   onSelect: () => void
   onChange: (patch: Partial<SpeechBubble>) => void
+  onMove: (direction: -1 | 1) => void
   onDelete: () => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
 }) {
-  const session = useRef<BubblePointerSession | null>(null)
   const textEdit = useRef<{ started: boolean } | null>(null)
   const avatar = profile?.avatar ?? ""
   const speakerName = profile?.name ?? bubble.speakerName
   const bubbleColor = profile?.bubbleColor ?? bubble.bubbleColor
   const textColor = profile?.textColor ?? bubble.textColor
-
-  const start = (event: PointerEvent<HTMLDivElement>) => {
-    if (selected && event.target instanceof Element && event.target.closest("[data-bubble-editor]")) {
-      event.stopPropagation()
-      onSelect()
-      return
-    }
-    event.preventDefault()
-    event.stopPropagation()
-    const page = event.currentTarget.closest<HTMLElement>("[data-book-page]")
-    if (!page) return
-    onSelect()
-    session.current = {
-      id: bubble.id,
-      startX: event.clientX,
-      startY: event.clientY,
-      pageRect: page.getBoundingClientRect(),
-      bubble,
-    }
-    event.currentTarget.setPointerCapture(event.pointerId)
-    onInteractionStart()
-  }
-
-  const move = (event: PointerEvent<HTMLDivElement>) => {
-    const current = session.current
-    if (!current) return
-    onChange({
-      x: Math.max(-8, Math.min(92, current.bubble.x + ((event.clientX - current.startX) / current.pageRect.width) * 100)),
-      y: Math.max(0, Math.min(94, current.bubble.y + ((event.clientY - current.startY) / current.pageRect.height) * 100)),
-    })
-  }
-
-  const end = (event: PointerEvent<HTMLDivElement>) => {
-    if (!session.current) return
-    session.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    onInteractionEnd()
-  }
 
   const startTextEdit = (event: FocusEvent<HTMLElement>) => {
     event.stopPropagation()
@@ -426,7 +383,7 @@ function SpeechBubbleItem({
   ) : null
   const cardNode = (
     <div className="speech-card">
-      {speakerName ? <strong>{speakerName}</strong> : null}
+      {speakerName && bubble.showName !== false ? <strong>{speakerName}</strong> : null}
       <p
         contentEditable={selected}
         suppressContentEditableWarning
@@ -453,28 +410,39 @@ function SpeechBubbleItem({
 
   return (
     <div
-      className={`speech-layer side-${bubble.side}${avatar ? " has-avatar" : " is-text-only"}${selected ? " is-selected" : ""}`}
+      className={`speech-layer side-${bubble.side}${avatar ? " has-avatar" : " is-text-only"}${selected ? " is-selected" : ""}${bubble.y < 8 ? " is-near-top" : ""}`}
       style={{
-        left: `${bubble.x}%`,
+        left: bubble.side === "left" ? "8%" : "auto",
+        right: bubble.side === "right" ? "8%" : "auto",
         top: `${bubble.y}%`,
-        width: `${bubble.width}%`,
+        width: `${bubble.autoWidth === false ? bubble.width : speechBubbleWidth(bubble, speakerName, Boolean(avatar))}%`,
         zIndex: bubble.zIndex + 10,
         "--bubble-color": bubbleColor,
         "--bubble-text": textColor,
+        "--bubble-message-size": `${2.9 * ((bubble.textScale ?? 100) / 100)}cqw`,
+        "--bubble-secondary-size": `${2.1 * ((bubble.secondaryTextScale ?? 100) / 100)}cqw`,
       } as CSSProperties}
-      onPointerDown={start}
-      onPointerMove={move}
-      onPointerUp={end}
-      onPointerCancel={end}
+      onPointerDown={(event) => {
+        event.stopPropagation()
+        onSelect()
+      }}
       data-speech-bubble={bubble.id}
     >
       {bubble.side === "left" ? avatarNode : null}
       {cardNode}
       {bubble.side === "right" ? avatarNode : null}
       {selected ? (
-        <button className="speech-delete" type="button" onPointerDown={(event) => event.stopPropagation()} onClick={onDelete} title="말풍선 삭제">
-          <Trash2 aria-hidden="true" />
-        </button>
+        <div className="speech-toolbar" role="toolbar" aria-label="말풍선 위치" onPointerDown={(event) => event.stopPropagation()}>
+          <button type="button" onClick={() => onMove(-1)} title="말풍선 위로 이동" aria-label="말풍선 위로 이동">
+            <ArrowUp aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => onMove(1)} title="말풍선 아래로 이동" aria-label="말풍선 아래로 이동">
+            <ArrowDown aria-hidden="true" />
+          </button>
+          <button className="speech-delete" type="button" onClick={onDelete} title="말풍선 삭제" aria-label="말풍선 삭제">
+            <Trash2 aria-hidden="true" />
+          </button>
+        </div>
       ) : null}
     </div>
   )
@@ -496,6 +464,7 @@ function DropPage({
   onChangeImage,
   onDeleteImage,
   onChangeBubble,
+  onMoveBubble,
   onDeleteBubble,
   onInteractionStart,
   onInteractionEnd,
@@ -515,6 +484,7 @@ function DropPage({
   onChangeImage: (id: string, patch: Partial<ImageLayer>) => void
   onDeleteImage: (id: string) => void
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
+  onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
@@ -579,6 +549,7 @@ function DropPage({
             selected={bubble.id === selectedBubbleId}
             onSelect={() => onSelectBubble(bubble.id)}
             onChange={(patch) => onChangeBubble(bubble.id, patch)}
+            onMove={(direction) => onMoveBubble(bubble.id, direction)}
             onDelete={() => onDeleteBubble(bubble.id)}
             onInteractionStart={onInteractionStart}
             onInteractionEnd={onInteractionEnd}
@@ -627,6 +598,7 @@ export function BookCanvas(props: Props) {
           onChangeImage={props.onChangeImage}
           onDeleteImage={props.onDeleteImage}
           onChangeBubble={props.onChangeBubble}
+          onMoveBubble={props.onMoveBubble}
           onDeleteBubble={props.onDeleteBubble}
           onInteractionStart={props.onInteractionStart}
           onInteractionEnd={props.onInteractionEnd}
@@ -665,6 +637,7 @@ export function BookCanvas(props: Props) {
             onChangeImage={props.onChangeImage}
             onDeleteImage={props.onDeleteImage}
             onChangeBubble={props.onChangeBubble}
+            onMoveBubble={props.onMoveBubble}
             onDeleteBubble={props.onDeleteBubble}
             onInteractionStart={props.onInteractionStart}
             onInteractionEnd={props.onInteractionEnd}
