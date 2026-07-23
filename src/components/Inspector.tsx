@@ -76,6 +76,7 @@ type Props = {
   onAddBubble: (profileId: string, text: string, secondaryText: string, side: SpeechBubble["side"]) => void
   onPatchBubble: (patch: Partial<SpeechBubble>) => void
   onMoveBubble: (direction: -1 | 1) => void
+  onInsertTextAfterBubble: () => void
   onDeleteBubble: () => void
   onAddDivider: (style: DividerStyle, color: string) => void
   onPatchDivider: (patch: Partial<DividerBlock>) => void
@@ -695,6 +696,11 @@ function DialoguePanel(props: Props) {
                 <ArrowDown aria-hidden="true" /> 아래로
               </button>
             </div>
+            {props.selectedBubble.page > 0 ? (
+              <button className="secondary-button" type="button" onClick={props.onInsertTextAfterBubble} title="이 말풍선 뒤에 본문 글을 써 넣어요">
+                <Type aria-hidden="true" /> 말풍선 사이에 글 넣기
+              </button>
+            ) : null}
             <label className="toggle-row">
               <input
                 type="checkbox"

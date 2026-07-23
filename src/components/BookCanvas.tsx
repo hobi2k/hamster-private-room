@@ -219,6 +219,7 @@ function FlowTextSegment({
   document,
   start,
   end,
+  isGap = false,
   followingBlockIds,
   pendingCaret,
   onSelectPage,
@@ -231,6 +232,7 @@ function FlowTextSegment({
   document: BookDocument
   start: number
   end: number
+  isGap?: boolean
   followingBlockIds: string[]
   pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
@@ -342,7 +344,7 @@ function FlowTextSegment({
   return (
     <div
       ref={editorRef}
-      className="flow-text-segment"
+      className={isGap ? "flow-text-segment is-gap" : "flow-text-segment"}
       contentEditable="plaintext-only"
       suppressContentEditableWarning
       spellCheck={false}
@@ -763,7 +765,7 @@ function PageFlowEditor({
   const nodes: ReactNode[] = []
   let cursor = page.start
 
-  ordered.forEach((item) => {
+  ordered.forEach((item, index) => {
     const anchor = Math.max(cursor, Math.min(page.end, item.anchor))
     nodes.push(
       <FlowTextSegment
@@ -771,6 +773,7 @@ function PageFlowEditor({
         document={document}
         start={cursor}
         end={anchor}
+        isGap={index > 0}
         followingBlockIds={globalOrder.slice(globalOrder.findIndex((block) => block.id === item.id)).map((block) => block.id)}
         pendingCaret={pendingCaret}
         onSelectPage={onSelectPage}

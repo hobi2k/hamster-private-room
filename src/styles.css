@@ -1845,8 +1845,23 @@ kbd {
   min-height: 1lh;
 }
 
+/* Empty gaps between two flow blocks collapse so bubbles sit almost touching.
+   The gap stays editable — focusing it (via the "말풍선 사이에 글 넣기" action or a
+   click) restores a full line to type narration in, with no box border. */
+.flow-text-segment.is-gap:empty:not(:focus) {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+}
+
 .flow-text-segment:focus {
   box-shadow: inset 0 -1px rgba(234, 165, 60, 0.5);
+}
+
+.flow-text-segment.is-gap:focus {
+  box-shadow: none;
 }
 
 .flow-text-segment::selection,
@@ -2138,8 +2153,8 @@ kbd {
   top: auto;
   right: auto;
   left: auto;
-  margin-top: 1cqw;
-  margin-bottom: 1cqw;
+  margin-top: 0.7cqw;
+  margin-bottom: 0.7cqw;
 }
 
 .speech-layer.is-flow.side-left {

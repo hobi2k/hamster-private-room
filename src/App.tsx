@@ -855,6 +855,19 @@ export default function App() {
     notify("말풍선을 지웠어요.")
   }
 
+  const insertTextAfterBubble = (id = selectedBubbleId) => {
+    const current = documentRef.current
+    const bubble = current.speechBubbles.find((item) => item.id === id)
+    if (!bubble || bubble.page === 0) return
+    const globalOrder = [
+      ...current.speechBubbles.filter((item) => item.page > 0).map((item) => ({ id: item.id, anchor: item.anchor, order: item.zIndex })),
+      ...current.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order })),
+    ].sort((left, right) => left.anchor - right.anchor || left.order - right.order)
+    const next = globalOrder[globalOrder.findIndex((item) => item.id === id) + 1] ?? null
+    setPendingCaret({ offset: bubble.anchor, beforeBlockId: next ? next.id : null })
+    notify("말풍선 사이에 바로 글을 쓸 수 있어요.", "success")
+  }
+
   const addMark = (start: number, end: number, kind: MarkKind, value: string) => {
     if (start === end) {
       notify("본문에서 꾸밀 글자를 먼저 드래그해 주세요.", "warn")
@@ -1158,6 +1171,7 @@ export default function App() {
         onAddBubble={addBubble}
         onPatchBubble={(patch) => selectedBubble && patchBubble(selectedBubble.id, patch)}
         onMoveBubble={(direction) => selectedBubble && moveBubble(selectedBubble.id, direction)}
+        onInsertTextAfterBubble={() => selectedBubble && insertTextAfterBubble(selectedBubble.id)}
         onDeleteBubble={() => deleteBubble()}
         onAddDivider={addDivider}
         onPatchDivider={(patch) => selectedDivider && patchDivider(selectedDivider.id, patch)}
