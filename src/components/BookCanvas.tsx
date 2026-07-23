@@ -1,10 +1,10 @@
-import { ArrowDown, ArrowUp, Check, RotateCw, Trash2 } from "lucide-react"
+import { ArrowDown, ArrowLeftRight, ArrowUp, Check, RotateCw, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
 import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
-import type { BookDocument, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
+import type { BookDocument, DividerBlock, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
   document: BookDocument
@@ -13,23 +13,26 @@ type Props = {
   selectedPages: number[]
   selectedImageId: string
   selectedBubbleId: string
-  pendingCaret: { offset: number; beforeBubbleId: string | null } | null
+  selectedDividerId: string
+  pendingCaret: { offset: number; beforeBlockId: string | null } | null
   transformMode: boolean
   onSelectPage: (page: number, additive?: boolean) => void
   onSelectImage: (id: string) => void
   onSelectBubble: (id: string) => void
+  onSelectDivider: (id: string) => void
   onAddImage: (file: File, page: number) => void
   onChangeImage: (id: string, patch: Partial<ImageLayer>) => void
   onDeleteImage: (id: string) => void
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
+  onDeleteDivider: (id: string) => void
   onChangePageText: (
     start: number,
     end: number,
     text: string,
-    followingBubbleIds: string[],
-    caret?: { offset: number; beforeBubbleId: string | null },
+    followingBlockIds: string[],
+    caret?: { offset: number; beforeBlockId: string | null },
   ) => void
   onCaretRestored: () => void
   onSelectText: (selection: TextSelection) => void
@@ -57,7 +60,7 @@ function escapeHtml(value: string) {
 
 function decoratedTextHtml(document: BookDocument, start: number, end: number) {
   const page = { text: document.body.slice(start, end), start, end }
-  return decoratePage(document.body, page, document.marks, document.options).map((slice) => {
+  const html = decoratePage(document.body, page, document.marks, document.options).map((slice) => {
     const style = [
       slice.style.color ? `color:${escapeHtml(slice.style.color)}` : "",
       slice.style.backgroundColor ? `background-color:${escapeHtml(slice.style.backgroundColor)}` : "",
@@ -69,11 +72,15 @@ function decoratedTextHtml(document: BookDocument, start: number, end: number) {
       ? `<span class="paragraph-gap" style="height:${document.options.paragraphSpacing}px"></span>`
       : bit === "\n" ? "<br>" : `<span${style ? ` style="${style}"` : ""}>${escapeHtml(bit)}</span>`).join("")
   }).join("")
+  return page.text.endsWith("\n") ? `${html}<span class="caret-anchor">&#8203;</span>` : html
 }
 
 function editableNodeText(current: Node): string {
   if (current.nodeType === Node.TEXT_NODE) return current.nodeValue ?? ""
   if (!(current instanceof Element)) return Array.from(current.childNodes).map(editableNodeText).join("")
+  if (current.classList.contains("caret-anchor")) {
+    return Array.from(current.childNodes).map(editableNodeText).join("").replaceAll("\u200b", "")
+  }
   if (current.classList.contains("paragraph-gap")) return "\n\n"
   if (current.tagName === "BR") return "\n"
   const text = Array.from(current.childNodes).map(editableNodeText).join("")
@@ -91,7 +98,7 @@ function selectionTextLength(editor: HTMLElement, node: Node, offset: number) {
   range.selectNodeContents(editor)
   range.setEnd(node, offset)
   const fragment = range.cloneContents()
-  return editableNodeText(fragment).replace(/\n$/, "").length
+  return editableNodeText(fragment).length
 }
 
 function caretTextLength(editor: HTMLElement) {
@@ -121,10 +128,38 @@ function placeCaret(editor: HTMLElement, offset: number) {
       Array.from(node.childNodes).forEach(visit)
       return
     }
+    if (node.classList.contains("caret-anchor")) {
+      const textNodes = Array.from(node.childNodes).filter((child) => child.nodeType === Node.TEXT_NODE)
+      for (const textNode of textNodes) {
+        const raw = textNode.nodeValue ?? ""
+        const logicalLength = raw.replaceAll("\u200b", "").length
+        if (remaining <= logicalLength) {
+          let logicalOffset = 0
+          let rawOffset = raw.length
+          for (let index = 0; index < raw.length; index += 1) {
+            if (raw[index] === "\u200b") continue
+            if (logicalOffset === remaining) {
+              rawOffset = index
+              break
+            }
+            logicalOffset += 1
+          }
+          range.setStart(textNode, rawOffset)
+          placed = true
+          return
+        }
+        remaining -= logicalLength
+      }
+      return
+    }
     const virtualLength = node.classList.contains("paragraph-gap") ? 2 : node.tagName === "BR" ? 1 : 0
     if (virtualLength) {
       if (remaining <= virtualLength) {
-        range.setStartAfter(node)
+        const anchorText = node.nextSibling instanceof Element && node.nextSibling.classList.contains("caret-anchor")
+          ? node.nextSibling.firstChild
+          : null
+        if (anchorText?.nodeType === Node.TEXT_NODE) range.setStart(anchorText, 1)
+        else range.setStartAfter(node)
         placed = true
         return
       }
@@ -146,11 +181,45 @@ function placeCaret(editor: HTMLElement, offset: number) {
   selection?.addRange(range)
 }
 
+function replaceSelectionWithText(editor: HTMLElement, text: string) {
+  const selection = window.getSelection()
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : window.document.createRange()
+  if (!selection || !editor.contains(range.commonAncestorContainer)) {
+    range.selectNodeContents(editor)
+    range.collapse(false)
+  }
+  range.deleteContents()
+  const nodes = text.split("\n").flatMap<Node>((line, index, lines) => {
+    if (index === lines.length - 1) return line ? [window.document.createTextNode(line)] : []
+    const anchor = window.document.createElement("span")
+    anchor.className = "caret-anchor"
+    anchor.textContent = "\u200b"
+    return [
+      ...(line ? [window.document.createTextNode(line)] : []),
+      window.document.createElement("br"),
+      anchor,
+    ]
+  })
+  if (!nodes.length) return
+  const fragment = window.document.createDocumentFragment()
+  nodes.forEach((node) => fragment.append(node))
+  range.insertNode(fragment)
+  const lastNode = nodes.at(-1)!
+  const anchorText = lastNode instanceof Element && lastNode.classList.contains("caret-anchor")
+    ? lastNode.firstChild
+    : null
+  if (anchorText?.nodeType === Node.TEXT_NODE) range.setStart(anchorText, 1)
+  else range.setStartAfter(lastNode)
+  range.collapse(true)
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+}
+
 function FlowTextSegment({
   document,
   start,
   end,
-  followingBubbleIds,
+  followingBlockIds,
   pendingCaret,
   onSelectPage,
   onChange,
@@ -162,7 +231,7 @@ function FlowTextSegment({
   document: BookDocument
   start: number
   end: number
-  followingBubbleIds: string[]
+  followingBlockIds: string[]
   pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
   onChange: Props["onChangePageText"]
@@ -175,8 +244,9 @@ function FlowTextSegment({
   const dirty = useRef(false)
   const editEnd = useRef(end)
   const preserveKeyboardSelection = useRef(false)
+  const composing = useRef(false)
   const html = useMemo(() => decoratedTextHtml(document, start, end), [document, end, start])
-  const beforeBubbleId = followingBubbleIds[0] ?? null
+  const beforeBlockId = followingBlockIds[0] ?? null
 
   useLayoutEffect(() => {
     const editor = editorRef.current
@@ -190,26 +260,14 @@ function FlowTextSegment({
 
   useLayoutEffect(() => {
     const editor = editorRef.current
-    if (!editor || !pendingCaret || pendingCaret.beforeBubbleId !== beforeBubbleId) return
+    if (!editor || !pendingCaret || pendingCaret.beforeBlockId !== beforeBlockId) return
     if (pendingCaret.offset < start || pendingCaret.offset > end) return
     editor.focus({ preventScroll: true })
     placeCaret(editor, pendingCaret.offset - start)
     onSelectText({ start: pendingCaret.offset, end: pendingCaret.offset })
-    const caretOffset = pendingCaret.offset - start
-    const restore = () => {
-      if (!editor.isConnected || window.document.activeElement !== editor) return
-      placeCaret(editor, caretOffset)
-    }
-    const frame = window.requestAnimationFrame(restore)
-    const timer = window.setTimeout(() => {
-      restore()
-      onCaretRestored()
-    }, 120)
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.clearTimeout(timer)
-    }
-  }, [beforeBubbleId, end, onCaretRestored, onSelectText, pendingCaret, start])
+    editor.scrollIntoView({ block: "nearest" })
+    queueMicrotask(onCaretRestored)
+  }, [beforeBlockId, end, onCaretRestored, onSelectText, pendingCaret, start])
 
   useEffect(() => () => {
     if (dirty.current) onInteractionEnd()
@@ -217,13 +275,28 @@ function FlowTextSegment({
 
   const updateSelection = () => {
     if (preserveKeyboardSelection.current) return
-    if (dirty.current) return
     const editor = editorRef.current
     const selection = window.getSelection()
     if (!editor || !selection?.anchorNode || !selection.focusNode || !editor.contains(selection.anchorNode) || !editor.contains(selection.focusNode)) return
     const anchor = start + selectionTextLength(editor, selection.anchorNode, selection.anchorOffset)
     const focus = start + selectionTextLength(editor, selection.focusNode, selection.focusOffset)
     onSelectText({ start: Math.min(anchor, focus), end: Math.max(anchor, focus) })
+  }
+
+  const applyEditorChange = (editor: HTMLDivElement) => {
+    preserveKeyboardSelection.current = false
+    if (!dirty.current) {
+      onInteractionStart()
+      editEnd.current = end
+    }
+    dirty.current = true
+    const text = editableElementText(editor)
+    const caret = start + caretTextLength(editor)
+    onChange(start, editEnd.current, text, followingBlockIds, {
+      offset: caret,
+      beforeBlockId,
+    })
+    editEnd.current = start + text.length
   }
 
   const applyCut = (event: ClipboardEvent<HTMLDivElement>) => {
@@ -259,9 +332,9 @@ function FlowTextSegment({
     if (hasNativeSelection) selection?.deleteFromDocument()
     else editor.textContent = next
     onSelectText({ start: start + cutStart, end: start + cutStart })
-    onChange(start, editEnd.current, next, followingBubbleIds, {
+    onChange(start, editEnd.current, next, followingBlockIds, {
       offset: start + cutStart,
-      beforeBubbleId: followingBubbleIds[0] ?? null,
+      beforeBlockId,
     })
     editEnd.current = start + next.length
   }
@@ -270,7 +343,7 @@ function FlowTextSegment({
     <div
       ref={editorRef}
       className="flow-text-segment"
-      contentEditable
+      contentEditable="plaintext-only"
       suppressContentEditableWarning
       spellCheck={false}
       data-flow-text-segment
@@ -282,26 +355,31 @@ function FlowTextSegment({
       onPointerDown={() => {
         preserveKeyboardSelection.current = false
       }}
+      onCompositionStart={() => {
+        composing.current = true
+      }}
+      onCompositionEnd={(event) => {
+        composing.current = false
+        applyEditorChange(event.currentTarget)
+      }}
       onInput={(event) => {
-        preserveKeyboardSelection.current = false
-        if (!dirty.current) {
-          onInteractionStart()
-          editEnd.current = end
-        }
-        dirty.current = true
-        const text = editableElementText(event.currentTarget)
-        const measuredCaret = caretTextLength(event.currentTarget)
-        const caret = start + (measuredCaret === 0 && text.length > editEnd.current - start ? text.length : measuredCaret)
-        onChange(start, editEnd.current, text, followingBubbleIds, {
-          offset: caret,
-          beforeBubbleId: followingBubbleIds[0] ?? null,
-        })
-        editEnd.current = start + text.length
+        if (!composing.current) applyEditorChange(event.currentTarget)
+      }}
+      onPaste={(event) => {
+        event.preventDefault()
+        replaceSelectionWithText(event.currentTarget, event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n"))
+        applyEditorChange(event.currentTarget)
       }}
       onCut={applyCut}
       onSelect={updateSelection}
       onMouseUp={updateSelection}
       onKeyDown={(event) => {
+        if (event.key === "Enter" && !(event.nativeEvent as KeyboardEvent).isComposing) {
+          event.preventDefault()
+          replaceSelectionWithText(event.currentTarget, "\n")
+          applyEditorChange(event.currentTarget)
+          return
+        }
         if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "a") return
         preserveKeyboardSelection.current = true
         onSelectText({ start, end: start + editableElementText(event.currentTarget).length })
@@ -584,6 +662,9 @@ function SpeechBubbleItem({
           <button type="button" onClick={() => onMove(1)} title="말풍선 아래로 이동" aria-label="말풍선 아래로 이동">
             <ArrowDown aria-hidden="true" />
           </button>
+          <button type="button" onClick={() => onChange({ side: bubble.side === "left" ? "right" : "left" })} title="말풍선 좌우 바꾸기" aria-label="말풍선 좌우 바꾸기">
+            <ArrowLeftRight aria-hidden="true" />
+          </button>
           <button className="speech-delete" type="button" onClick={onDelete} title="말풍선 삭제" aria-label="말풍선 삭제">
             <Trash2 aria-hidden="true" />
           </button>
@@ -593,17 +674,58 @@ function SpeechBubbleItem({
   )
 }
 
+function FlowDividerItem({
+  divider,
+  selected,
+  onSelect,
+  onDelete,
+}: {
+  divider: DividerBlock
+  selected: boolean
+  onSelect: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div
+      className={`flow-divider style-${divider.style}${selected ? " is-selected" : ""}`}
+      style={{ "--divider-color": divider.color } as CSSProperties}
+      contentEditable={false}
+      data-flow-divider={divider.id}
+      onPointerDown={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (window.document.activeElement instanceof HTMLElement) window.document.activeElement.blur()
+        onSelect()
+      }}
+    >
+      <span className="divider-line" />
+      {divider.style === "diamond" ? <span className="divider-motif" aria-hidden="true">◆ ◆ ◆</span> : null}
+      {divider.style === "dots" ? <span className="divider-motif is-dots" aria-hidden="true">● ● ●</span> : null}
+      {divider.style === "diamond" || divider.style === "dots" ? <span className="divider-line" /> : null}
+      {selected ? (
+        <button className="divider-delete" type="button" onClick={onDelete} title="구분선 삭제" aria-label="구분선 삭제">
+          <Trash2 aria-hidden="true" />
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function PageFlowEditor({
   document,
   page,
   bubbles,
+  dividers,
   selectedBubbleId,
+  selectedDividerId,
   pendingCaret,
   onSelectPage,
   onSelectBubble,
+  onSelectDivider,
   onChangeBubble,
   onMoveBubble,
   onDeleteBubble,
+  onDeleteDivider,
   onChangePageText,
   onCaretRestored,
   onSelectText,
@@ -613,35 +735,43 @@ function PageFlowEditor({
   document: BookDocument
   page: PageSlice
   bubbles: SpeechBubble[]
+  dividers: DividerBlock[]
   selectedBubbleId: string
+  selectedDividerId: string
   pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
   onSelectBubble: (id: string) => void
+  onSelectDivider: (id: string) => void
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
+  onDeleteDivider: (id: string) => void
   onChangePageText: Props["onChangePageText"]
   onCaretRestored: () => void
   onSelectText: (selection: TextSelection) => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
 }) {
-  const ordered = [...bubbles].sort((left, right) => left.anchor - right.anchor || left.zIndex - right.zIndex)
-  const globalOrder = document.speechBubbles
-    .filter((bubble) => bubble.page > 0)
-    .sort((left, right) => left.anchor - right.anchor || left.zIndex - right.zIndex)
+  const ordered = [
+    ...bubbles.map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, type: "bubble" as const, bubble })),
+    ...dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, type: "divider" as const, divider })),
+  ].sort((left, right) => left.anchor - right.anchor || left.order - right.order)
+  const globalOrder = [
+    ...document.speechBubbles.filter((bubble) => bubble.page > 0).map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex })),
+    ...document.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order })),
+  ].sort((left, right) => left.anchor - right.anchor || left.order - right.order)
   const nodes: ReactNode[] = []
   let cursor = page.start
 
-  ordered.forEach((bubble) => {
-    const anchor = Math.max(cursor, Math.min(page.end, bubble.anchor))
+  ordered.forEach((item) => {
+    const anchor = Math.max(cursor, Math.min(page.end, item.anchor))
     nodes.push(
       <FlowTextSegment
-        key={`text:${cursor}:${bubble.id}`}
+        key={`text:${cursor}:${item.id}`}
         document={document}
         start={cursor}
         end={anchor}
-        followingBubbleIds={globalOrder.slice(globalOrder.findIndex((item) => item.id === bubble.id)).map((item) => item.id)}
+        followingBlockIds={globalOrder.slice(globalOrder.findIndex((block) => block.id === item.id)).map((block) => block.id)}
         pendingCaret={pendingCaret}
         onSelectPage={onSelectPage}
         onChange={onChangePageText}
@@ -650,20 +780,30 @@ function PageFlowEditor({
         onInteractionStart={onInteractionStart}
         onInteractionEnd={onInteractionEnd}
       />,
+    )
+    nodes.push(item.type === "bubble" ? (
       <SpeechBubbleItem
-        key={`bubble:${bubble.id}`}
-        bubble={bubble}
+        key={`bubble:${item.id}`}
+        bubble={item.bubble}
         flow
-        profile={document.members.find((member) => member.id === bubble.profileId) ?? null}
-        selected={bubble.id === selectedBubbleId}
-        onSelect={() => onSelectBubble(bubble.id)}
-        onChange={(patch) => onChangeBubble(bubble.id, patch)}
-        onMove={(direction) => onMoveBubble(bubble.id, direction)}
-        onDelete={() => onDeleteBubble(bubble.id)}
+        profile={document.members.find((member) => member.id === item.bubble.profileId) ?? null}
+        selected={item.id === selectedBubbleId}
+        onSelect={() => onSelectBubble(item.id)}
+        onChange={(patch) => onChangeBubble(item.id, patch)}
+        onMove={(direction) => onMoveBubble(item.id, direction)}
+        onDelete={() => onDeleteBubble(item.id)}
         onInteractionStart={onInteractionStart}
         onInteractionEnd={onInteractionEnd}
-      />,
-    )
+      />
+    ) : (
+      <FlowDividerItem
+        key={`divider:${item.id}`}
+        divider={item.divider}
+        selected={item.id === selectedDividerId}
+        onSelect={() => onSelectDivider(item.id)}
+        onDelete={() => onDeleteDivider(item.id)}
+      />
+    ))
     cursor = anchor
   })
 
@@ -673,9 +813,9 @@ function PageFlowEditor({
       document={document}
       start={cursor}
       end={page.end}
-      followingBubbleIds={(ordered.length
+      followingBlockIds={(ordered.length
         ? globalOrder.slice(globalOrder.findIndex((item) => item.id === ordered.at(-1)?.id) + 1)
-        : globalOrder.filter((bubble) => bubble.anchor >= page.end)
+        : globalOrder.filter((block) => block.anchor >= page.end)
       ).map((item) => item.id)}
       pendingCaret={pendingCaret}
       onSelectPage={onSelectPage}
@@ -860,6 +1000,15 @@ export function BookCanvas(props: Props) {
   const coverVisible = props.document.options.coverMode !== "none"
   const coverHasImage = props.document.options.coverMode === "image" || props.document.options.coverMode === "image-text"
   const coverHasText = props.document.options.coverMode === "text" || props.document.options.coverMode === "image-text"
+  const pendingCaretPage = props.pendingCaret
+    ? props.pages.findIndex((page, index) => props.pendingCaret
+      && props.pendingCaret.offset >= page.start
+      && (
+        props.pendingCaret.offset < page.end
+        || (index === props.pages.length - 1 && props.pendingCaret.offset <= page.end)
+        || (props.pendingCaret.offset === page.end && (props.pages[index + 1]?.start ?? page.end) > page.end)
+      ))
+    : -1
 
   return (
     <section className="book-canvas" aria-label="책 미리보기">
@@ -932,13 +1081,17 @@ export function BookCanvas(props: Props) {
                   ? page.blockIds.includes(bubble.id)
                   : bubble.anchor >= page.start && (bubble.anchor < page.end || index === props.pages.length - 1))
               ))}
+              dividers={props.document.dividers.filter((divider) => page.blockIds?.includes(divider.id))}
               selectedBubbleId={props.selectedBubbleId}
-              pendingCaret={props.pendingCaret}
+              selectedDividerId={props.selectedDividerId}
+              pendingCaret={pendingCaretPage === index ? props.pendingCaret : null}
               onSelectPage={() => props.onSelectPage(pageNumber)}
               onSelectBubble={props.onSelectBubble}
+              onSelectDivider={props.onSelectDivider}
               onChangeBubble={props.onChangeBubble}
               onMoveBubble={props.onMoveBubble}
               onDeleteBubble={props.onDeleteBubble}
+              onDeleteDivider={props.onDeleteDivider}
               onChangePageText={props.onChangePageText}
               onCaretRestored={props.onCaretRestored}
               onSelectText={props.onSelectText}

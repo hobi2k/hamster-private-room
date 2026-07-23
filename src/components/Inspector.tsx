@@ -1,5 +1,6 @@
 import {
   ArrowDown,
+  ArrowLeftRight,
   ArrowUp,
   Bold,
   Camera,
@@ -13,6 +14,7 @@ import {
   ImagePlus,
   Italic,
   MessageCircleMore,
+  Plus,
   RotateCcw,
   Save,
   Trash2,
@@ -29,6 +31,8 @@ import { fitImageToPage } from "../lib/image"
 import type {
   BookDocument,
   BookOptions,
+  DividerBlock,
+  DividerStyle,
   EditorTab,
   ExportMode,
   FooterNote,
@@ -48,6 +52,7 @@ type Props = {
   selectedPage: number
   selectedImage: ImageLayer | null
   selectedBubble: SpeechBubble | null
+  selectedDivider: DividerBlock | null
   textSelection: TextSelection | null
   members: MemberProfile[]
   customPresets: ThemePreset[]
@@ -72,6 +77,9 @@ type Props = {
   onPatchBubble: (patch: Partial<SpeechBubble>) => void
   onMoveBubble: (direction: -1 | 1) => void
   onDeleteBubble: () => void
+  onAddDivider: (style: DividerStyle, color: string) => void
+  onPatchDivider: (patch: Partial<DividerBlock>) => void
+  onDeleteDivider: () => void
   onPatchFooter: (patch: Partial<FooterNote>) => void
   onApplyFooterAll: () => void
   onDeleteFooter: (all: boolean) => void
@@ -147,7 +155,12 @@ function RangeField({
 function ColorInput({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
   return (
     <label className="color-input" title={label}>
-      <input type="color" value={value} onChange={(event) => onChange(event.target.value)} />
+      <input
+        type="color"
+        value={value}
+        onInput={(event) => onChange(event.currentTarget.value)}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      />
       <span style={{ background: value }} />
       <small>{label}</small>
     </label>
@@ -264,6 +277,8 @@ function Section({ title, children, open = true, className = "" }: { title: stri
 
 function ManuscriptPanel(props: Props) {
   const options = props.document.options
+  const [dividerStyle, setDividerStyle] = useState<DividerStyle>("diamond")
+  const [dividerColor, setDividerColor] = useState(options.quoteColor)
   const addSelectionMark = (kind: MarkKind, value: string) => {
     const selection = props.textSelection
     if (!selection) {
@@ -342,6 +357,46 @@ function ManuscriptPanel(props: Props) {
             ))}
           </div>
           <ColorInput label="형광펜" value={options.highlightColor} onChange={(highlightColor) => props.onPatchOptions({ highlightColor })} />
+        </Section>
+
+        <Section title="구분선" open={false}>
+          <div className="divider-style-grid" role="group" aria-label="구분선 모양">
+            {(["solid", "dashed", "diamond", "dots"] as DividerStyle[]).map((style) => (
+              <button
+                className={dividerStyle === style ? `divider-style-button style-${style} is-active` : `divider-style-button style-${style}`}
+                type="button"
+                key={style}
+                onClick={() => setDividerStyle(style)}
+                title={style === "solid" ? "실선" : style === "dashed" ? "점선" : style === "diamond" ? "다이아" : "점 장식"}
+                aria-label={style === "solid" ? "실선" : style === "dashed" ? "점선" : style === "diamond" ? "다이아" : "점 장식"}
+              >
+                <span />
+                {style === "diamond" ? <i>◆ ◆ ◆</i> : null}
+                {style === "dots" ? <i>● ● ●</i> : null}
+              </button>
+            ))}
+          </div>
+          <ColorInput label="구분선 색" value={dividerColor} onChange={setDividerColor} />
+          <button className="primary-button" type="button" onClick={() => props.onAddDivider(dividerStyle, dividerColor)}>
+            <Plus aria-hidden="true" /> 커서 위치에 추가
+          </button>
+          {props.selectedDivider ? (
+            <div className="selected-divider-controls">
+              <strong>선택한 구분선</strong>
+              <Field label="모양">
+                <select value={props.selectedDivider.style} onChange={(event) => props.onPatchDivider({ style: event.target.value as DividerStyle })}>
+                  <option value="solid">실선</option>
+                  <option value="dashed">점선</option>
+                  <option value="diamond">다이아</option>
+                  <option value="dots">점 장식</option>
+                </select>
+              </Field>
+              <ColorInput label="색" value={props.selectedDivider.color} onChange={(color) => props.onPatchDivider({ color })} />
+              <button className="danger-button" type="button" onClick={props.onDeleteDivider}>
+                <Trash2 aria-hidden="true" /> 구분선 삭제
+              </button>
+            </div>
+          ) : null}
         </Section>
 
         <Section title="스마트 하이라이트" open={false}>
@@ -683,6 +738,9 @@ function DialoguePanel(props: Props) {
                 <option value="right">오른쪽</option>
               </select>
             </Field>
+            <button className="secondary-button" type="button" onClick={() => props.onPatchBubble({ side: props.selectedBubble?.side === "left" ? "right" : "left" })}>
+              <ArrowLeftRight aria-hidden="true" /> 좌우 바로 바꾸기
+            </button>
             <button className="danger-button" type="button" onClick={props.onDeleteBubble}>
               <Trash2 aria-hidden="true" /> 말풍선 삭제
             </button>

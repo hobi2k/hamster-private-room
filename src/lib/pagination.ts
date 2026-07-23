@@ -21,8 +21,8 @@ export function paginateText(text: string, options: BookOptions, blocks: FlowBlo
 function paginateSection(text: string, options: BookOptions, offset: number, blocks: FlowBlock[]): PageSlice[] {
   const contentWidth = Math.max(120, options.pageWidth - options.paddingX * 2)
   const pageHeight = options.pageWidth * PAGE_RATIO
-  const contentHeight = Math.max(160, pageHeight - options.paddingY - pageHeight * 0.11)
   const lineHeight = options.fontSize * options.lineHeight
+  const contentHeight = Math.max(160, pageHeight - options.paddingY - pageHeight * 0.11 - lineHeight * 1.1)
   const lineUnits = Math.max(6, contentWidth / (options.fontSize * options.scaleX))
   const sectionBlocks = blocks
     .filter((block) => block.anchor >= offset && block.anchor <= offset + text.length)

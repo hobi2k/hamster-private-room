@@ -24,6 +24,8 @@ import type {
   BookDocument,
   BookOptions,
   BookSlot,
+  DividerBlock,
+  DividerStyle,
   EditorTab,
   ExportMode,
   FooterNote,
@@ -54,14 +56,20 @@ function createDocument(): BookDocument {
     images: [],
     members: [],
     speechBubbles: [],
+    dividers: [],
     marks: [],
     footers: {},
     updatedAt: new Date().toISOString(),
   }
 }
 
-function speechBubbleBlocks(bubbles: SpeechBubble[], members: MemberProfile[], options: BookOptions) {
-  return bubbles
+function documentFlowBlocks(
+  bubbles: SpeechBubble[],
+  dividers: DividerBlock[],
+  members: MemberProfile[],
+  options: BookOptions,
+) {
+  const speechBlocks = bubbles
     .filter((bubble) => bubble.page > 0)
     .sort((left, right) => left.anchor - right.anchor || left.zIndex - right.zIndex)
     .map((bubble) => ({
@@ -73,6 +81,12 @@ function speechBubbleBlocks(bubbles: SpeechBubble[], members: MemberProfile[], o
         options,
       ),
     }))
+  const dividerBlocks = dividers.map((divider) => ({
+    id: divider.id,
+    anchor: divider.anchor,
+    height: options.pageWidth * 0.09,
+  }))
+  return [...speechBlocks, ...dividerBlocks]
 }
 
 function normalizeDocument(parsed: Partial<BookDocument>) {
@@ -111,7 +125,12 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
     })
   }
 
-  const pages = paginateText(body, options, speechBubbleBlocks(speechBubbles, members, options))
+  const dividers = Array.isArray(parsed.dividers) ? parsed.dividers.map((divider, index) => ({
+    ...divider,
+    anchor: Math.max(0, Math.min(body.length, Number.isFinite(divider.anchor) ? divider.anchor : body.length)),
+    order: Number.isFinite(divider.order) ? divider.order : index + 1,
+  })) : []
+  const pages = paginateText(body, options, documentFlowBlocks(speechBubbles, dividers, members, options))
   const normalized = {
     ...createDocument(),
     ...parsed,
@@ -123,6 +142,7 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
       ...bubble,
       page: pageForBlock(bubble.id, pages) || pageForAnchor(bubble.anchor, pages),
     }),
+    dividers,
     marks,
     footers: parsed.footers ?? {},
   }
@@ -273,8 +293,9 @@ export default function App() {
   const [selectedPages, setSelectedPages] = useState(() => [documentState.options.coverMode === "none" ? 1 : 0])
   const [selectedImageId, setSelectedImageId] = useState("")
   const [selectedBubbleId, setSelectedBubbleId] = useState("")
+  const [selectedDividerId, setSelectedDividerId] = useState("")
   const [textSelection, setTextSelection] = useState<TextSelection | null>(null)
-  const [pendingCaret, setPendingCaret] = useState<{ offset: number; beforeBubbleId: string | null } | null>(null)
+  const [pendingCaret, setPendingCaret] = useState<{ offset: number; beforeBlockId: string | null } | null>(null)
   const [transformMode, setTransformMode] = useState(true)
   const [customPresets, setCustomPresets] = useState(loadPresets)
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
@@ -384,13 +405,14 @@ export default function App() {
   }, [customPresets])
 
   const flowBlocks = useMemo(
-    () => speechBubbleBlocks(documentState.speechBubbles, documentState.members, documentState.options),
-    [documentState.members, documentState.options, documentState.speechBubbles],
+    () => documentFlowBlocks(documentState.speechBubbles, documentState.dividers, documentState.members, documentState.options),
+    [documentState.dividers, documentState.members, documentState.options, documentState.speechBubbles],
   )
   const pages = useMemo(() => paginateText(documentState.body, documentState.options, flowBlocks), [documentState.body, documentState.options, flowBlocks])
   const maxPage = pages.length
   const selectedImage = documentState.images.find((image) => image.id === selectedImageId) ?? null
   const selectedBubble = documentState.speechBubbles.find((bubble) => bubble.id === selectedBubbleId) ?? null
+  const selectedDivider = documentState.dividers.find((divider) => divider.id === selectedDividerId) ?? null
 
   useEffect(() => {
     const fallback = selectedPage > maxPage || (selectedPage === 0 && documentState.options.coverMode === "none") ? Math.max(1, maxPage) : selectedPage
@@ -420,7 +442,10 @@ export default function App() {
       const speechBubbles = current.speechBubbles
         .filter((bubble) => !removed.has(bubble.page === 0 ? 0 : pageForBlock(bubble.id, pages)))
         .map((bubble) => ({ ...bubble, anchor: text.mapOffset(bubble.anchor) }))
-      const nextPages = paginateText(text.body, options, speechBubbleBlocks(speechBubbles, current.members, options))
+      const dividers = current.dividers
+        .filter((divider) => !removed.has(pageForBlock(divider.id, pages)))
+        .map((divider) => ({ ...divider, anchor: text.mapOffset(divider.anchor) }))
+      const nextPages = paginateText(text.body, options, documentFlowBlocks(speechBubbles, dividers, current.members, options))
       return {
         ...current,
         body: text.body,
@@ -431,6 +456,7 @@ export default function App() {
           ...bubble,
           page: pageForBlock(bubble.id, nextPages) || pageForAnchor(bubble.anchor, nextPages),
         }),
+        dividers,
         footers: Object.fromEntries(Object.entries(current.footers)
           .filter(([page]) => !removed.has(Number(page)))
           .map(([page, footer]) => [remapPage(Number(page)), footer])),
@@ -441,6 +467,7 @@ export default function App() {
     setSelectedPages([nextPage])
     setSelectedImageId("")
     setSelectedBubbleId("")
+    setSelectedDividerId("")
     setTextSelection(null)
     const message = pageNumbers.length > 1
       ? `${pageNumbers.length}개 페이지를 지웠어요.`
@@ -507,11 +534,17 @@ export default function App() {
           speechBubbles: current.speechBubbles.filter((bubble) => bubble.id !== selectedBubbleId),
         }))
         setSelectedBubbleId("")
+        return
+      }
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedDividerId && !target.closest("input, textarea, [contenteditable]")) {
+        event.preventDefault()
+        commit((current) => ({ ...current, dividers: current.dividers.filter((divider) => divider.id !== selectedDividerId) }))
+        setSelectedDividerId("")
       }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [commit, deleteSelectedPages, redo, selectedBubbleId, selectedImageId, selectedPages.length, undo])
+  }, [commit, deleteSelectedPages, redo, selectedBubbleId, selectedDividerId, selectedImageId, selectedPages.length, undo])
 
   const patchOptions = (patch: Partial<BookOptions>) => {
     commit((current) => ({ ...current, options: { ...current.options, ...patch } }))
@@ -524,6 +557,7 @@ export default function App() {
     setSelectedPages([nextPage])
     setSelectedImageId("")
     setSelectedBubbleId("")
+    setSelectedDividerId("")
     setTextSelection(null)
     notify(`${nextPage}쪽을 추가했어요.`, "success")
     window.requestAnimationFrame(() => {
@@ -535,14 +569,14 @@ export default function App() {
     start: number,
     end: number,
     text: string,
-    followingBubbleIds: string[],
-    caret?: { offset: number; beforeBubbleId: string | null },
+    followingBlockIds: string[],
+    caret?: { offset: number; beforeBlockId: string | null },
   ) => {
     if (caret !== undefined) setPendingCaret(caret)
     updateTransient((current) => {
       if (current.body.slice(start, end) === text) return current
       const delta = text.length - (end - start)
-      const following = new Set(followingBubbleIds)
+      const following = new Set(followingBlockIds)
       const body = `${current.body.slice(0, start)}${text}${current.body.slice(end)}`
       const order = new Map(current.speechBubbles
         .filter((bubble) => bubble.page > 0)
@@ -557,7 +591,13 @@ export default function App() {
           zIndex: order.get(bubble.id) ?? bubble.zIndex,
         }
       })
-      const nextPages = paginateText(body, current.options, speechBubbleBlocks(speechBubbles, current.members, current.options))
+      const dividers = current.dividers.map((divider) => ({
+        ...divider,
+        anchor: divider.anchor > end || (divider.anchor === end && following.has(divider.id))
+          ? Math.max(0, divider.anchor + delta)
+          : divider.anchor,
+      }))
+      const nextPages = paginateText(body, current.options, documentFlowBlocks(speechBubbles, dividers, current.members, current.options))
       return {
         ...current,
         body,
@@ -565,6 +605,7 @@ export default function App() {
           ...bubble,
           page: pageForBlock(bubble.id, nextPages) || pageForAnchor(bubble.anchor, nextPages),
         }),
+        dividers,
         marks: current.marks.flatMap((mark) => {
           if (mark.end <= start) return mark
           if (mark.start >= end) return { ...mark, start: mark.start + delta, end: mark.end + delta }
@@ -602,6 +643,7 @@ export default function App() {
     setSelectedPage(page)
     setSelectedImageId(id)
     setSelectedBubbleId("")
+    setSelectedDividerId("")
     setActiveTab("image")
     notify("사진을 페이지에 콕 놓았어요.", "success")
   }
@@ -723,8 +765,45 @@ export default function App() {
     })
     setSelectedImageId("")
     setSelectedBubbleId(id)
+    setSelectedDividerId("")
     setActiveTab("dialogue")
     notify("말풍선을 현재 페이지에 놓았어요.", "success")
+  }
+
+  const addDivider = (style: DividerStyle, color: string) => {
+    const id = crypto.randomUUID()
+    const page = pages[Math.max(0, selectedPage - 1)]
+    const anchor = textSelection && page && textSelection.start >= page.start && textSelection.start <= page.end
+      ? textSelection.start
+      : page?.end ?? documentRef.current.body.length
+    commit((current) => ({
+      ...current,
+      dividers: [...current.dividers, {
+        id,
+        anchor,
+        style,
+        color,
+        order: Math.max(0, ...current.dividers.map((divider) => divider.order)) + 1,
+      }],
+    }))
+    setSelectedDividerId(id)
+    setSelectedBubbleId("")
+    setSelectedImageId("")
+    notify("구분선을 커서 위치에 넣었어요.", "success")
+  }
+
+  const patchDivider = (id: string, patch: Partial<DividerBlock>) => {
+    commit((current) => ({
+      ...current,
+      dividers: current.dividers.map((divider) => divider.id === id ? { ...divider, ...patch } : divider),
+    }))
+  }
+
+  const deleteDivider = (id = selectedDividerId) => {
+    if (!id) return
+    commit((current) => ({ ...current, dividers: current.dividers.filter((divider) => divider.id !== id) }))
+    setSelectedDividerId("")
+    notify("구분선을 지웠어요.")
   }
 
   const patchBubble = (id: string, patch: Partial<SpeechBubble>, transient = false) => {
@@ -738,7 +817,7 @@ export default function App() {
           ...(member ? { speakerName: member.name, bubbleColor: member.bubbleColor, textColor: member.textColor } : {}),
         }
       })
-      const nextPages = paginateText(current.body, current.options, speechBubbleBlocks(speechBubbles, current.members, current.options))
+      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.members, current.options))
       return {
         ...current,
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
@@ -755,7 +834,7 @@ export default function App() {
     commit((current) => {
       const speechBubbles = moveSpeechBubble(current.speechBubbles, id, direction)
       if (speechBubbles === current.speechBubbles) return current
-      const nextPages = paginateText(current.body, current.options, speechBubbleBlocks(speechBubbles, current.members, current.options))
+      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.members, current.options))
       return {
         ...current,
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
@@ -866,6 +945,7 @@ export default function App() {
     setSelectedPages([firstPage])
     setSelectedImageId("")
     setSelectedBubbleId("")
+    setSelectedDividerId("")
     setTextSelection(null)
     setActiveTab("manuscript")
     setMobilePanelOpen(false)
@@ -940,6 +1020,7 @@ export default function App() {
       setSelectedPage(next.includes(page) ? page : next.at(-1) ?? page)
       setSelectedImageId("")
       setSelectedBubbleId("")
+      setSelectedDividerId("")
       setTextSelection(null)
       return
     }
@@ -951,6 +1032,8 @@ export default function App() {
     const selectedBubblePage = selectedBubble?.page === 0 ? 0 : selectedBubble ? pageForBlock(selectedBubble.id, pages) : -1
     const bubbleBelongsElsewhere = selectedBubble && selectedBubblePage !== page
     if (bubbleBelongsElsewhere) setSelectedBubbleId("")
+    const dividerPage = selectedDivider ? pageForBlock(selectedDivider.id, pages) : -1
+    if (selectedDivider && dividerPage !== page) setSelectedDividerId("")
   }
 
   const pageCount = pages.length + (documentState.options.coverMode === "none" ? 0 : 1)
@@ -1051,6 +1134,7 @@ export default function App() {
         selectedPage={selectedPage}
         selectedImage={selectedImage}
         selectedBubble={selectedBubble}
+        selectedDivider={selectedDivider}
         textSelection={textSelection}
         members={documentState.members}
         customPresets={customPresets}
@@ -1075,6 +1159,9 @@ export default function App() {
         onPatchBubble={(patch) => selectedBubble && patchBubble(selectedBubble.id, patch)}
         onMoveBubble={(direction) => selectedBubble && moveBubble(selectedBubble.id, direction)}
         onDeleteBubble={() => deleteBubble()}
+        onAddDivider={addDivider}
+        onPatchDivider={(patch) => selectedDivider && patchDivider(selectedDivider.id, patch)}
+        onDeleteDivider={() => deleteDivider()}
         onPatchFooter={patchFooter}
         onApplyFooterAll={applyFooterAll}
         onDeleteFooter={deleteFooter}
@@ -1137,18 +1224,27 @@ export default function App() {
             selectedPages={selectedPages}
             selectedImageId={selectedImageId}
             selectedBubbleId={selectedBubbleId}
+            selectedDividerId={selectedDividerId}
             pendingCaret={pendingCaret}
             transformMode={transformMode}
             onSelectPage={selectPage}
             onSelectImage={(id) => {
               setSelectedImageId(id)
               setSelectedBubbleId("")
+              setSelectedDividerId("")
               setActiveTab("image")
             }}
             onSelectBubble={(id) => {
               setSelectedBubbleId(id)
+              setSelectedDividerId("")
               setSelectedImageId("")
               setActiveTab("dialogue")
+            }}
+            onSelectDivider={(id) => {
+              setSelectedDividerId(id)
+              setSelectedBubbleId("")
+              setSelectedImageId("")
+              setActiveTab("manuscript")
             }}
             onAddImage={addImage}
             onChangeImage={(id, patch) => patchImage(id, patch, true)}
@@ -1156,6 +1252,7 @@ export default function App() {
             onChangeBubble={(id, patch) => patchBubble(id, patch, true)}
             onMoveBubble={moveBubble}
             onDeleteBubble={deleteBubble}
+            onDeleteDivider={deleteDivider}
             onChangePageText={replacePageText}
             onCaretRestored={clearPendingCaret}
             onSelectText={setTextSelection}

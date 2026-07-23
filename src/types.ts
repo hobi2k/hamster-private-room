@@ -63,6 +63,16 @@ export type SpeechBubble = {
   zIndex: number
 }
 
+export type DividerStyle = "solid" | "dashed" | "diamond" | "dots"
+
+export type DividerBlock = {
+  id: string
+  anchor: number
+  style: DividerStyle
+  color: string
+  order: number
+}
+
 export type FooterNote = {
   title: string
   subtitle: string
@@ -109,6 +119,7 @@ export type BookDocument = {
   images: ImageLayer[]
   members: MemberProfile[]
   speechBubbles: SpeechBubble[]
+  dividers: DividerBlock[]
   marks: TextMark[]
   footers: Record<number, FooterNote>
   updatedAt: string
