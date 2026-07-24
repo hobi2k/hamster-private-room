@@ -15,6 +15,17 @@ export function diffRange(previous: string, next: string): { prefix: number; suf
   return { prefix, suffix }
 }
 
+export function splitBoundaryNewlines(text: string, suppressLead: boolean, suppressTrail: boolean) {
+  const lead = suppressLead && text.startsWith("\n") ? "\n" : ""
+  const withoutLead = lead ? text.slice(1) : text
+  const trail = suppressTrail && withoutLead.endsWith("\n") ? "\n" : ""
+  return {
+    lead,
+    content: trail ? withoutLead.slice(0, -1) : withoutLead,
+    trail,
+  }
+}
+
 export function applyFontMark(
   marks: TextMark[],
   start: number,

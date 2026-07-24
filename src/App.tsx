@@ -1186,7 +1186,11 @@ export default function App() {
     setExporting(true)
     notify("페이지를 이미지로 만들고 있어요.")
     try {
-      await exportBook(mode, selectedPage, documentState.title)
+      const exported = await exportBook(mode, selectedPage, documentState.title)
+      if (!exported) {
+        notify("내보내기를 취소했어요.")
+        return
+      }
       notify("이미지 저장을 시작했어요.", "success")
     } catch {
       notify("이미지를 저장하지 못했어요. 외부 이미지나 글꼴을 확인해 주세요.", "warn")

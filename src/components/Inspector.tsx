@@ -1035,11 +1035,11 @@ function ExportPanel(props: Props) {
           </button>
           <button className="export-choice" type="button" onClick={() => props.onExport("single")}>
             <FileDown aria-hidden="true" />
-            <span><strong>모든 페이지 낱장</strong><small>표지를 포함해 한 장씩 저장</small></span>
+            <span><strong>모든 페이지 낱장</strong><small>선택한 폴더에 PNG 파일로 한 장씩 저장</small></span>
           </button>
           <button className="export-choice" type="button" onClick={() => props.onExport("spread")}>
             <BookSpreadIcon />
-            <span><strong>양면 펼침</strong><small>두 쪽씩 묶고 마지막 홀수 쪽은 낱장 저장</small></span>
+            <span><strong>양면 펼침</strong><small>표지+1쪽부터 묶어 선택한 폴더에 PNG로 저장</small></span>
           </button>
         </Section>
         <Section title="작업 파일" open={false}>

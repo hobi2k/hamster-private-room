@@ -1,20 +1,52 @@
 import { describe, expect, it } from "vitest"
-import { createStoreZip } from "./export"
+import { planSpreadExport, writeExportFile } from "./export"
+import type { ExportDirectory } from "./export"
 
-describe("createStoreZip", () => {
-  it("writes multiple UTF-8 files into one store-only ZIP", () => {
-    const encoder = new TextEncoder()
-    const archive = createStoreZip([
-      { name: "book-page-0.png", data: new Uint8Array([1, 2, 3]) },
-      { name: "책-page-1.png", data: new Uint8Array([4, 5]) },
+describe("planSpreadExport", () => {
+  it("pairs the cover with page 1 and then pages 2 and 3", () => {
+    expect(planSpreadExport(4)).toEqual([
+      { left: 0, right: 1 },
+      { left: 2, right: 3 },
     ])
-    const view = new DataView(archive.buffer)
-    const text = new TextDecoder().decode(archive)
+  })
 
-    expect(view.getUint32(0, true)).toBe(0x04034b50)
-    expect(view.getUint32(archive.length - 22, true)).toBe(0x06054b50)
-    expect(view.getUint16(archive.length - 14, true)).toBe(2)
-    expect(text).toContain("book-page-0.png")
-    expect(text).toContain(new TextDecoder().decode(encoder.encode("책-page-1.png")))
+  it("leaves only the final odd page unpaired", () => {
+    expect(planSpreadExport(5)).toEqual([
+      { left: 0, right: 1 },
+      { left: 2, right: 3 },
+      { left: 4, right: null },
+    ])
+  })
+})
+
+describe("writeExportFile", () => {
+  it("writes a PNG blob directly into the selected directory", async () => {
+    const writes: Blob[] = []
+    const names: string[] = []
+    let closed = false
+    const directory = {
+      async getFileHandle(name: string) {
+        names.push(name)
+        return {
+          async createWritable() {
+            return {
+              async write(value: Blob) {
+                writes.push(value)
+              },
+              async close() {
+                closed = true
+              },
+            }
+          },
+        }
+      },
+    } satisfies ExportDirectory
+    const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" })
+
+    await writeExportFile(directory, png, "book-spread-0-1.png")
+
+    expect(names).toEqual(["book-spread-0-1.png"])
+    expect(writes).toEqual([png])
+    expect(closed).toBe(true)
   })
 })

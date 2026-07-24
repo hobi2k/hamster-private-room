@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { TextMark } from "../types"
-import { applyFontMark, diffRange, segmentOwnsCaret } from "./text"
+import { applyFontMark, diffRange, segmentOwnsCaret, splitBoundaryNewlines } from "./text"
 
 describe("diffRange", () => {
   it("finds an insertion in the middle", () => {
@@ -33,6 +33,22 @@ describe("diffRange", () => {
     const { prefix, suffix } = diffRange(previous, next)
     const rebuilt = previous.slice(0, prefix) + next.slice(prefix, next.length - suffix) + previous.slice(previous.length - suffix)
     expect(rebuilt).toBe(next)
+  })
+})
+
+describe("splitBoundaryNewlines", () => {
+  it("keeps the structural leading newline separate from a user newline", () => {
+    expect(splitBoundaryNewlines("\n\n다음 문단", true, false)).toEqual({
+      lead: "\n",
+      content: "\n다음 문단",
+      trail: "",
+    })
+  })
+
+  it("protects both alignment boundaries without losing logical newlines", () => {
+    const parts = splitBoundaryNewlines("\n\n\n", true, true)
+    expect(parts).toEqual({ lead: "\n", content: "\n", trail: "\n" })
+    expect(`${parts.lead}${parts.content}${parts.trail}`).toBe("\n\n\n")
   })
 })
 

@@ -4,7 +4,7 @@ import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, M
 import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
-import { diffRange, segmentOwnsCaret } from "../lib/text"
+import { diffRange, segmentOwnsCaret, splitBoundaryNewlines } from "../lib/text"
 import type { BookDocument, DividerBlock, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
@@ -60,9 +60,16 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;")
 }
 
-function decoratedTextHtml(document: BookDocument, start: number, end: number) {
+function decoratedTextHtml(
+  document: BookDocument,
+  start: number,
+  end: number,
+  suppressLeadBreak: boolean,
+  suppressTrailBreak: boolean,
+) {
   const page = { text: document.body.slice(start, end), start, end }
-  const html = decoratePage(document.body, page, document.marks, document.options).map((slice) => {
+  const slices = decoratePage(document.body, page, document.marks, document.options)
+  const html = slices.map((slice, index) => {
     const style = [
       slice.style.color ? `color:${escapeHtml(slice.style.color)}` : "",
       slice.style.backgroundColor ? `background-color:${escapeHtml(slice.style.backgroundColor)}` : "",
@@ -70,10 +77,16 @@ function decoratedTextHtml(document: BookDocument, start: number, end: number) {
       slice.style.fontWeight ? `font-weight:${slice.style.fontWeight}` : "",
       slice.style.fontFamily ? `font-family:'${escapeHtml(slice.style.fontFamily.replace(/["'\\]/g, ""))}', 'Noto Serif KR', serif` : "",
     ].filter(Boolean).join(";")
-    const bits = slice.text.split(/(\n\n|\n)/)
-    return bits.map((bit) => bit === "\n\n"
+    const boundary = splitBoundaryNewlines(
+      slice.text,
+      suppressLeadBreak && index === 0,
+      suppressTrailBreak && index === slices.length - 1,
+    )
+    const bits = boundary.content.split(/(\n\n|\n)/)
+    const content = bits.map((bit) => bit === "\n\n"
       ? `<span class="paragraph-gap" style="height:${document.options.paragraphSpacing}px"></span>`
       : bit === "\n" ? "<br>" : `<span${style ? ` style="${style}"` : ""}>${escapeHtml(bit)}</span>`).join("")
+    return `${boundary.lead ? "<br>" : ""}${content}${boundary.trail ? "<br>" : ""}`
   }).join("")
   return page.text.endsWith("\n") ? `${html}<span class="caret-anchor">&#8203;</span>` : html
 }
@@ -259,7 +272,10 @@ function FlowTextSegment({
   const lastText = useRef("")
   const preserveKeyboardSelection = useRef(false)
   const composing = useRef(false)
-  const html = useMemo(() => decoratedTextHtml(document, start, end), [document, end, start])
+  const html = useMemo(
+    () => decoratedTextHtml(document, start, end, suppressLeadBreak, suppressTrailBreak),
+    [document, end, start, suppressLeadBreak, suppressTrailBreak],
+  )
   const beforeBlockId = followingBlockIds[0] ?? null
 
   useLayoutEffect(() => {
