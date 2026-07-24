@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { DEFAULT_OPTIONS } from "../data/themes"
-import type { PageSlice, SpeechBubble } from "../types"
+import type { DividerBlock, PageSlice, SpeechBubble } from "../types"
 import { estimateSpeechBubbleHeight, moveSpeechBubble, pageForAnchor, speechBubbleWidth } from "./speech"
 
 function bubble(patch: Partial<SpeechBubble> = {}): SpeechBubble {
@@ -23,6 +23,17 @@ function bubble(patch: Partial<SpeechBubble> = {}): SpeechBubble {
     bubbleColor: "#e6e6e6",
     textColor: "#222",
     zIndex: 1,
+    ...patch,
+  }
+}
+
+function divider(patch: Partial<DividerBlock> = {}): DividerBlock {
+  return {
+    id: "d",
+    anchor: 0,
+    style: "solid",
+    color: "#222",
+    order: 1,
     ...patch,
   }
 }
@@ -70,7 +81,7 @@ describe("pageForAnchor", () => {
 describe("moveSpeechBubble", () => {
   it("swaps z-order for two bubbles sharing an anchor", () => {
     const bubbles = [bubble({ id: "a", anchor: 5, zIndex: 1 }), bubble({ id: "b", anchor: 5, zIndex: 2 })]
-    const moved = moveSpeechBubble(bubbles, "a", 1)
+    const moved = moveSpeechBubble(bubbles, [], "a", 1)
     const a = moved.find((item) => item.id === "a")!
     const b = moved.find((item) => item.id === "b")!
     expect(a.zIndex).toBe(2)
@@ -79,6 +90,44 @@ describe("moveSpeechBubble", () => {
 
   it("is a no-op moving the last bubble further down", () => {
     const bubbles = [bubble({ id: "a", anchor: 5, zIndex: 1 }), bubble({ id: "b", anchor: 5, zIndex: 2 })]
-    expect(moveSpeechBubble(bubbles, "b", 1)).toBe(bubbles)
+    expect(moveSpeechBubble(bubbles, [], "b", 1)).toBe(bubbles)
+  })
+
+  it("moves past the adjacent divider instead of skipping to the next bubble", () => {
+    const bubbles = [
+      bubble({ id: "a", anchor: 5, zIndex: 1 }),
+      bubble({ id: "b", anchor: 30, zIndex: 2 }),
+    ]
+    const moved = moveSpeechBubble(bubbles, [divider({ anchor: 12 })], "a", 1)
+    expect(moved.find((item) => item.id === "a")).toMatchObject({ anchor: 12, flowRank: 1 })
+    expect(moved.find((item) => item.id === "b")?.anchor).toBe(30)
+  })
+
+  it("places a bubble immediately before the adjacent divider when moving up", () => {
+    const bubbles = [bubble({ id: "a", anchor: 20, zIndex: 2 })]
+    const moved = moveSpeechBubble(bubbles, [divider({ anchor: 12 })], "a", -1)
+    expect(moved[0].anchor).toBe(12)
+  })
+
+  it("moves to the adjacent bubble without swapping their distant anchors", () => {
+    const bubbles = [
+      bubble({ id: "a", anchor: 5, zIndex: 1 }),
+      bubble({ id: "b", anchor: 20, zIndex: 2 }),
+      bubble({ id: "c", anchor: 35, zIndex: 3 }),
+    ]
+    const moved = moveSpeechBubble(bubbles, [], "a", 1)
+    expect(moved.find((item) => item.id === "a")?.anchor).toBe(20)
+    expect(moved.find((item) => item.id === "b")?.anchor).toBe(20)
+    expect(moved.find((item) => item.id === "c")?.anchor).toBe(35)
+  })
+
+  it("crosses exactly one of multiple dividers sharing an anchor", () => {
+    const bubbles = [bubble({ id: "a", anchor: 12, zIndex: 1 })]
+    const dividers = [
+      divider({ id: "d1", anchor: 12, order: 10 }),
+      divider({ id: "d2", anchor: 12, order: 20 }),
+    ]
+    const moved = moveSpeechBubble(bubbles, dividers, "a", 1)
+    expect(moved[0]).toMatchObject({ anchor: 12, flowRank: 1, zIndex: 15 })
   })
 })

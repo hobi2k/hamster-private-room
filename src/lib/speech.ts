@@ -1,4 +1,4 @@
-import type { BookOptions, MemberProfile, PageSlice, SpeechBubble } from "../types"
+import type { BookOptions, DividerBlock, MemberProfile, PageSlice, SpeechBubble } from "../types"
 
 type VerticalLayoutItem = {
   id: string
@@ -10,22 +10,56 @@ type VerticalLayoutItem = {
 export const DIALOGUE_LAYOUT_GAP = 1.2
 export const DIALOGUE_LAYOUT_MAX_BOTTOM = 94
 
-export function moveSpeechBubble(bubbles: SpeechBubble[], id: string, direction: -1 | 1) {
+type FlowOrderItem = {
+  id: string
+  anchor: number
+  order: number
+  rank: number
+  type: "bubble" | "divider"
+}
+
+export function moveSpeechBubble(
+  bubbles: SpeechBubble[],
+  dividers: DividerBlock[],
+  id: string,
+  direction: -1 | 1,
+) {
   const bubble = bubbles.find((item) => item.id === id)
   if (!bubble) return bubbles
-  const ordered = bubbles
-    .filter((item) => (item.page === 0) === (bubble.page === 0))
-    .sort((left, right) => left.anchor - right.anchor || left.zIndex - right.zIndex)
+  const ordered: FlowOrderItem[] = [
+    ...bubbles
+      .filter((item) => (item.page === 0) === (bubble.page === 0))
+      .map((item) => ({ id: item.id, anchor: item.anchor, order: item.zIndex, rank: item.flowRank ?? 0, type: "bubble" as const })),
+    ...(bubble.page === 0
+      ? []
+      : dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1, type: "divider" as const }))),
+  ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
   const target = ordered[ordered.findIndex((item) => item.id === id) + direction]
   if (!target) return bubbles
-  if (target.anchor !== bubble.anchor) {
+
+  const bubbleRank = bubble.flowRank ?? 0
+  if (target.type === "bubble" && target.anchor === bubble.anchor && target.rank === bubbleRank) {
     return bubbles.map((item) => item.id === bubble.id
-      ? { ...item, anchor: target.anchor }
-      : item.id === target.id ? { ...item, anchor: bubble.anchor } : item)
+      ? { ...item, zIndex: target.order }
+      : item.id === target.id ? { ...item, zIndex: bubble.zIndex } : item)
   }
+
+  const peers = ordered
+    .filter((item) => item.id !== bubble.id && item.anchor === target.anchor && item.rank === target.rank)
+    .sort((left, right) => left.order - right.order)
+  const targetIndex = peers.findIndex((item) => item.id === target.id)
+  const neighbour = peers[targetIndex + direction]
+  const zIndex = neighbour === undefined
+    ? target.order + direction
+    : (target.order + neighbour.order) / 2
   return bubbles.map((item) => item.id === bubble.id
-    ? { ...item, zIndex: target.zIndex }
-    : item.id === target.id ? { ...item, zIndex: bubble.zIndex } : item)
+    ? {
+      ...item,
+      anchor: target.anchor,
+      zIndex,
+      flowRank: target.rank === 0 ? undefined : target.rank,
+    }
+    : item)
 }
 
 export function pageForAnchor(anchor: number, pages: PageSlice[]) {

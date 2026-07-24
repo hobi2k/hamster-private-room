@@ -61,6 +61,7 @@ export type SpeechBubble = {
   bubbleColor: string
   textColor: string
   zIndex: number
+  flowRank?: number
 }
 
 export type DividerStyle = "solid" | "dashed" | "diamond" | "dots"

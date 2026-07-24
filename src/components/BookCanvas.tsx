@@ -4,7 +4,7 @@ import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, M
 import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
-import { diffRange } from "../lib/text"
+import { diffRange, segmentOwnsCaret } from "../lib/text"
 import type { BookDocument, DividerBlock, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
@@ -226,6 +226,7 @@ function FlowTextSegment({
   align,
   suppressLeadBreak = false,
   suppressTrailBreak = false,
+  leadingSegment = true,
   followingBlockIds,
   pendingCaret,
   onSelectPage,
@@ -242,6 +243,7 @@ function FlowTextSegment({
   align?: CSSProperties["textAlign"]
   suppressLeadBreak?: boolean
   suppressTrailBreak?: boolean
+  leadingSegment?: boolean
   followingBlockIds: string[]
   pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
@@ -288,13 +290,16 @@ function FlowTextSegment({
   useLayoutEffect(() => {
     const editor = editorRef.current
     if (!editor || !pendingCaret || pendingCaret.beforeBlockId !== beforeBlockId) return
-    if (pendingCaret.offset < start || pendingCaret.offset > end) return
+    // Alignment can split one text run into adjacent editors with the same
+    // beforeBlockId. At their shared boundary only the leading segment owns the
+    // exact offset, preventing both effects from racing to restore the caret.
+    if (!segmentOwnsCaret(start, end, pendingCaret.offset, leadingSegment)) return
     editor.focus({ preventScroll: true })
     placeCaret(editor, pendingCaret.offset - start)
     onSelectText({ start: pendingCaret.offset, end: pendingCaret.offset })
     editor.scrollIntoView({ block: "nearest" })
     queueMicrotask(onCaretRestored)
-  }, [beforeBlockId, end, onCaretRestored, onSelectText, pendingCaret, start])
+  }, [beforeBlockId, end, leadingSegment, onCaretRestored, onSelectText, pendingCaret, start])
 
   useEffect(() => () => {
     if (dirty.current) onInteractionEnd()
@@ -312,8 +317,13 @@ function FlowTextSegment({
 
   const applyEditorChange = (editor: HTMLDivElement) => {
     preserveKeyboardSelection.current = false
+    // Re-arm the transient on every change. beginTransient is idempotent (it no-ops
+    // while a transient is open), but if a mid-typing toolbar commit (bold/italic/…
+    // applied without blurring) already flushed the open transient, this snapshots
+    // the post-commit state so the resumed typing burst still earns its own undo
+    // entry — otherwise a later undo overshoots past the intervening mark.
+    onInteractionStart()
     if (!dirty.current) {
-      onInteractionStart()
       editEnd.current = end
       lastText.current = document.body.slice(start, end)
     }
@@ -355,8 +365,10 @@ function FlowTextSegment({
 
     event.preventDefault()
     event.clipboardData.setData("text/plain", value.slice(cutStart, cutEnd))
+    // Re-arm the transient (see applyEditorChange) so a cut after a no-blur toolbar
+    // commit is recorded as its own undo step instead of being folded into the mark.
+    onInteractionStart()
     if (!dirty.current) {
-      onInteractionStart()
       editEnd.current = end
     }
     dirty.current = true
@@ -507,7 +519,17 @@ function ImageItem({
       return
     }
     if (current.action === "resize") {
-      onChange({ width: Math.max(8, Math.min(500, current.layer.width + dx)) })
+      const radians = (current.layer.rotation * Math.PI) / 180
+      const pointerDx = event.clientX - current.startX
+      const pointerDy = event.clientY - current.startY
+      // Undo the layer rotation, then project the local pointer movement onto
+      // the bottom-right resize handle's diagonal. This keeps the handle under
+      // the pointer for both landscape and portrait images at any rotation.
+      const localX = pointerDx * Math.cos(radians) + pointerDy * Math.sin(radians)
+      const localY = -pointerDx * Math.sin(radians) + pointerDy * Math.cos(radians)
+      const inverseAspect = 1 / Math.max(0.1, current.layer.aspectRatio ?? 1)
+      const widthDelta = ((localX + localY * inverseAspect) / (1 + inverseAspect ** 2) / current.pageRect.width) * 100
+      onChange({ width: Math.max(8, Math.min(500, current.layer.width + widthDelta)) })
       return
     }
     const centerX = current.pageRect.left + ((current.layer.x + current.layer.width / 2) / 100) * current.pageRect.width
@@ -807,17 +829,15 @@ function PageFlowEditor({
   onInteractionStart: () => void
   onInteractionEnd: () => void
 }) {
-  // Same-anchor ties: bubbles (rank 0) before dividers (rank 1), matching the
-  // pagination order in App.documentFlowBlocks. bubble.zIndex and divider.order
-  // are independent counters, so comparing them directly would order blocks
-  // arbitrarily and flip them on every edit — rank keeps render and pagination
-  // in lock-step.
+  // Same-anchor ties default to bubbles (rank 0) before dividers (rank 1),
+  // matching App.documentFlowBlocks. A bubble moved across a divider adopts
+  // rank 1 so its zIndex can place it directly between divider order values.
   const ordered = [
-    ...bubbles.map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: 0, type: "bubble" as const, bubble })),
+    ...bubbles.map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: bubble.flowRank ?? 0, type: "bubble" as const, bubble })),
     ...dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1, type: "divider" as const, divider })),
   ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
   const globalOrder = [
-    ...document.speechBubbles.filter((bubble) => bubble.page > 0).map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: 0 })),
+    ...document.speechBubbles.filter((bubble) => bubble.page > 0).map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: bubble.flowRank ?? 0 })),
     ...document.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
   ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
   // Paragraph alignment lives in "align" marks. A text run is split into
@@ -864,6 +884,7 @@ function PageFlowEditor({
           align={alignFor(segStart, segEnd)}
           suppressLeadBreak={index > 0}
           suppressTrailBreak={index < pairs.length - 1}
+          leadingSegment={index === 0}
           followingBlockIds={followingBlockIds}
           pendingCaret={pendingCaret}
           onSelectPage={onSelectPage}

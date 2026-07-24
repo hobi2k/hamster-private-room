@@ -20,6 +20,7 @@ import {
 } from "./lib/library"
 import { PAGE_BREAK, paginateText } from "./lib/pagination"
 import { estimateSpeechBubbleHeight, moveSpeechBubble, pageForAnchor, pageForBlock } from "./lib/speech"
+import { applyFontMark } from "./lib/text"
 import type {
   BookDocument,
   BookOptions,
@@ -72,10 +73,11 @@ function documentFlowBlocks(
 ) {
   const speechBlocks = bubbles
     .filter((bubble) => bubble.page > 0)
-    .sort((left, right) => left.anchor - right.anchor || left.zIndex - right.zIndex)
     .map((bubble) => ({
       id: bubble.id,
       anchor: bubble.anchor,
+      order: bubble.zIndex,
+      rank: bubble.flowRank ?? 0,
       // Prefer the real rendered height (measured from the DOM) so pagination
       // reserves exactly what a bubble occupies; fall back to the estimate for
       // freshly-added bubbles that haven't been measured yet.
@@ -88,9 +90,13 @@ function documentFlowBlocks(
   const dividerBlocks = dividers.map((divider) => ({
     id: divider.id,
     anchor: divider.anchor,
+    order: divider.order,
+    rank: 1,
     height: options.pageWidth * 0.09,
   }))
   return [...speechBlocks, ...dividerBlocks]
+    .sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
+    .map(({ id, anchor, height }) => ({ id, anchor, height }))
 }
 
 function normalizeDocument(parsed: Partial<BookDocument>) {
@@ -105,7 +111,12 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
     const legacyAnchor = page === 0 || !slice
       ? 0
       : slice.start + Math.round((slice.end - slice.start) * Math.max(0, Math.min(100, bubble.y ?? 18)) / 100)
-    return { ...bubble, page, anchor: Math.max(0, Math.min(body.length, Number.isFinite(bubble.anchor) ? bubble.anchor : legacyAnchor)) }
+    return {
+      ...bubble,
+      page,
+      anchor: Math.max(0, Math.min(body.length, Number.isFinite(bubble.anchor) ? bubble.anchor : legacyAnchor)),
+      flowRank: bubble.flowRank === 1 ? 1 : undefined,
+    }
   }) : []
   const legacyDialogueTexts = (parsed as Partial<BookDocument> & {
     dialogueTexts?: Array<{ afterBubbleId: string; text: string }>
@@ -658,8 +669,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [commit, deleteSelectedPages, redo, selectedBubbleId, selectedDividerId, selectedImageId, selectedPages.length, undo])
 
-  const patchOptions = (patch: Partial<BookOptions>) => {
-    commit((current) => {
+  const patchOptions = (patch: Partial<BookOptions>, transient = false) => {
+    const update = (current: BookDocument) => {
       // Hiding the cover stops page 0 from rendering — move its image layers to
       // page 1 so they aren't orphaned and unrecoverable.
       const hidingCover = patch.coverMode === "none" && current.options.coverMode !== "none"
@@ -668,7 +679,9 @@ export default function App() {
         options: { ...current.options, ...patch },
         images: hidingCover ? current.images.map((image) => image.page === 0 ? { ...image, page: 1 } : image) : current.images,
       }
-    })
+    }
+    if (transient) updateTransient(update)
+    else commit(update)
   }
 
   const addPage = () => {
@@ -700,7 +713,7 @@ export default function App() {
       const following = new Set(followingBlockIds)
       const body = `${current.body.slice(0, start)}${text}${current.body.slice(end)}`
       const order = new Map(current.speechBubbles
-        .filter((bubble) => bubble.page > 0)
+        .filter((bubble) => bubble.page > 0 && (bubble.flowRank ?? 0) === 0)
         .sort((left, right) => left.anchor - right.anchor || left.zIndex - right.zIndex)
         .map((bubble, index) => [bubble.id, index + 1]))
       const speechBubbles = current.speechBubbles.map((bubble) => {
@@ -709,7 +722,10 @@ export default function App() {
         return {
           ...bubble,
           anchor: shift ? Math.max(0, bubble.anchor + delta) : bubble.anchor,
-          zIndex: order.get(bubble.id) ?? bubble.zIndex,
+          // Rank-1 bubbles share their order space with dividers, so preserve
+          // that relative value. Default-rank bubbles keep the legacy compact
+          // z-order normalization.
+          zIndex: bubble.flowRank === 1 ? bubble.zIndex : order.get(bubble.id) ?? bubble.zIndex,
         }
       })
       const dividers = current.dividers.map((divider) => ({
@@ -828,11 +844,13 @@ export default function App() {
     return id
   }
 
-  const patchMember = (id: string, patch: Partial<MemberProfile>) => {
-    commit((current) => ({
+  const patchMember = (id: string, patch: Partial<MemberProfile>, transient = false) => {
+    const update = (current: BookDocument) => ({
       ...current,
       members: current.members.map((member) => member.id === id ? { ...member, ...patch } : member),
-    }))
+    })
+    if (transient) updateTransient(update)
+    else commit(update)
   }
 
   const setMemberAvatar = async (id: string, file: File) => {
@@ -974,7 +992,7 @@ export default function App() {
 
   const moveBubble = (id: string, direction: -1 | 1) => {
     commit((current) => {
-      const speechBubbles = moveSpeechBubble(current.speechBubbles, id, direction)
+      const speechBubbles = moveSpeechBubble(current.speechBubbles, current.dividers, id, direction)
       if (speechBubbles === current.speechBubbles) return current
       const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.members, current.options, bubbleHeightsRef.current))
       return {
@@ -1002,7 +1020,7 @@ export default function App() {
     const bubble = current.speechBubbles.find((item) => item.id === id)
     if (!bubble || bubble.page === 0) return
     const globalOrder = [
-      ...current.speechBubbles.filter((item) => item.page > 0).map((item) => ({ id: item.id, anchor: item.anchor, order: item.zIndex, rank: 0 })),
+      ...current.speechBubbles.filter((item) => item.page > 0).map((item) => ({ id: item.id, anchor: item.anchor, order: item.zIndex, rank: item.flowRank ?? 0 })),
       ...current.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
     ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
     const next = globalOrder[globalOrder.findIndex((item) => item.id === id) + 1] ?? null
@@ -1017,6 +1035,7 @@ export default function App() {
     }
     const range = { start: Math.min(start, end), end: Math.max(start, end) }
     commit((current) => {
+      if (kind === "font") return { ...current, marks: applyFontMark(current.marks, range.start, range.end, value) }
       const same = current.marks.some((mark) => mark.start === range.start && mark.end === range.end && mark.kind === kind && mark.value === value)
       const marks = current.marks.filter((mark) => mark.start !== range.start || mark.end !== range.end || mark.kind !== kind)
       // An empty value means "remove this kind from the range" (e.g. reset the
@@ -1325,7 +1344,11 @@ export default function App() {
         members={documentState.members}
         customPresets={customPresets}
         onClose={() => setMobilePanelOpen(false)}
-        onSetTitle={(title) => commit((current) => ({ ...current, title }))}
+        onSetTitle={(title, transient) => {
+          const update = (current: BookDocument) => ({ ...current, title })
+          if (transient) updateTransient(update)
+          else commit(update)
+        }}
         onPatchOptions={patchOptions}
         onApplyTheme={applyTheme}
         onSavePreset={savePreset}
@@ -1359,6 +1382,8 @@ export default function App() {
         onDownloadProject={() => downloadBookFile(documentState)}
         onImportProject={importProject}
         onNotify={notify}
+        onInputSessionStart={beginTransient}
+        onInputSessionEnd={endTransient}
       />
       <section className="workspace-shell">
         <header className="workspace-header">

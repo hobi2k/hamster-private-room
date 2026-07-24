@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { diffRange } from "./text"
+import type { TextMark } from "../types"
+import { applyFontMark, diffRange, segmentOwnsCaret } from "./text"
 
 describe("diffRange", () => {
   it("finds an insertion in the middle", () => {
@@ -32,5 +33,48 @@ describe("diffRange", () => {
     const { prefix, suffix } = diffRange(previous, next)
     const rebuilt = previous.slice(0, prefix) + next.slice(prefix, next.length - suffix) + previous.slice(previous.length - suffix)
     expect(rebuilt).toBe(next)
+  })
+})
+
+describe("applyFontMark", () => {
+  const fontMark = (patch: Partial<TextMark> = {}): TextMark => ({
+    id: "font",
+    start: 2,
+    end: 12,
+    kind: "font",
+    value: "Old Font",
+    ...patch,
+  })
+
+  it("splits a covering font mark when a sub-range is reset", () => {
+    const marks = applyFontMark([fontMark()], 5, 8, "", () => "right")
+    expect(marks).toEqual([
+      fontMark({ end: 5 }),
+      fontMark({ id: "right", start: 8 }),
+    ])
+  })
+
+  it("replaces only the selected part and leaves other mark kinds unchanged", () => {
+    const bold = fontMark({ id: "bold", kind: "bold", value: "700" })
+    let id = 0
+    const marks = applyFontMark([fontMark(), bold], 5, 8, "New Font", () => `new-${id += 1}`)
+    expect(marks).toEqual([
+      fontMark({ end: 5 }),
+      fontMark({ id: "new-1", start: 8 }),
+      bold,
+      fontMark({ id: "new-2", start: 5, end: 8, value: "New Font" }),
+    ])
+  })
+})
+
+describe("segmentOwnsCaret", () => {
+  it("gives a shared alignment boundary to the preceding segment only", () => {
+    expect(segmentOwnsCaret(0, 5, 5, true)).toBe(true)
+    expect(segmentOwnsCaret(5, 10, 5, false)).toBe(false)
+  })
+
+  it("keeps real block-boundary start and end offsets restorable", () => {
+    expect(segmentOwnsCaret(10, 20, 10, true)).toBe(true)
+    expect(segmentOwnsCaret(10, 20, 20, true)).toBe(true)
   })
 })

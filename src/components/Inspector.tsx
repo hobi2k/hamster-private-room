@@ -61,8 +61,8 @@ type Props = {
   members: MemberProfile[]
   customPresets: ThemePreset[]
   onClose: () => void
-  onSetTitle: (title: string) => void
-  onPatchOptions: (patch: Partial<BookOptions>) => void
+  onSetTitle: (title: string, transient?: boolean) => void
+  onPatchOptions: (patch: Partial<BookOptions>, transient?: boolean) => void
   onApplyTheme: (theme: ThemePreset) => void
   onSavePreset: (name: string) => void
   onDeletePreset: (id: string) => void
@@ -74,7 +74,7 @@ type Props = {
   onPatchImage: (patch: Partial<ImageLayer>) => void
   onDeleteImage: () => void
   onAddMember: () => string
-  onPatchMember: (id: string, patch: Partial<MemberProfile>) => void
+  onPatchMember: (id: string, patch: Partial<MemberProfile>, transient?: boolean) => void
   onSetMemberAvatar: (id: string, file: File) => void
   onDeleteMemberAvatar: (id: string) => void
   onDeleteMember: (id: string) => void
@@ -95,6 +95,8 @@ type Props = {
   onDownloadProject: () => void
   onImportProject: (file: File) => void
   onNotify: (message: string) => void
+  onInputSessionStart: () => void
+  onInputSessionEnd: () => void
 }
 
 function PanelHeader({ title, onReset }: { title: string; onReset?: () => void }) {
@@ -339,7 +341,7 @@ function ManuscriptPanel(props: Props) {
   const selection = props.textSelection
   const hasRange = Boolean(selection && selection.start !== selection.end)
   const selectionFont = hasRange
-    ? props.document.marks.find((mark) => mark.kind === "font" && mark.start === selection!.start && mark.end === selection!.end)?.value ?? ""
+    ? props.document.marks.find((mark) => mark.kind === "font" && mark.start <= selection!.start && mark.end >= selection!.end)?.value ?? ""
     : ""
   // Opening the native <select> blurs the editor, which can collapse the stored
   // selection before onChange fires — snapshot it on pointer down so the font
@@ -355,7 +357,12 @@ function ManuscriptPanel(props: Props) {
       <div className="panel-scroll">
         <Section title="책 정보">
           <Field label="책 이름">
-            <input value={props.document.title} onChange={(event) => props.onSetTitle(event.target.value)} />
+            <input
+              value={props.document.title}
+              onFocus={props.onInputSessionStart}
+              onChange={(event) => props.onSetTitle(event.target.value, true)}
+              onBlur={props.onInputSessionEnd}
+            />
           </Field>
         </Section>
         <Section title="선택 글자 꾸미기">
@@ -519,7 +526,12 @@ function ManuscriptPanel(props: Props) {
             </select>
           </Field>
           <Field label="표지 제목">
-            <input value={options.coverTitle} onChange={(event) => props.onPatchOptions({ coverTitle: event.target.value })} />
+            <input
+              value={options.coverTitle}
+              onFocus={props.onInputSessionStart}
+              onChange={(event) => props.onPatchOptions({ coverTitle: event.target.value }, true)}
+              onBlur={props.onInputSessionEnd}
+            />
           </Field>
           <div className="two-column-fields">
             <ColorInput
@@ -532,7 +544,12 @@ function ManuscriptPanel(props: Props) {
             </button>
           </div>
           <Field label="표지 부제">
-            <input value={options.coverSubtitle} onChange={(event) => props.onPatchOptions({ coverSubtitle: event.target.value })} />
+            <input
+              value={options.coverSubtitle}
+              onFocus={props.onInputSessionStart}
+              onChange={(event) => props.onPatchOptions({ coverSubtitle: event.target.value }, true)}
+              onBlur={props.onInputSessionEnd}
+            />
           </Field>
           <div className="two-column-fields">
             <ColorInput
@@ -726,7 +743,12 @@ function DialoguePanel(props: Props) {
         {selectedMember ? (
           <Section title="선택한 멤버" open={false}>
             <Field label="이름">
-              <input value={selectedMember.name} onChange={(event) => props.onPatchMember(selectedMember.id, { name: event.target.value })} />
+              <input
+                value={selectedMember.name}
+                onFocus={props.onInputSessionStart}
+                onChange={(event) => props.onPatchMember(selectedMember.id, { name: event.target.value }, true)}
+                onBlur={props.onInputSessionEnd}
+              />
             </Field>
             <div className="two-column-fields">
               <ColorInput label="말풍선" value={selectedMember.bubbleColor} onChange={(bubbleColor) => props.onPatchMember(selectedMember.id, { bubbleColor })} />
@@ -915,7 +937,13 @@ function LayoutPanel(props: Props) {
             <Type aria-hidden="true" /> 내 PC 글꼴 목록
           </button>
           <Field label="글꼴 이름 직접 입력">
-            <input value={options.customFont} onChange={(event) => props.onPatchOptions({ customFont: event.target.value })} placeholder="예: KoPubWorldBatang" />
+            <input
+              value={options.customFont}
+              onFocus={props.onInputSessionStart}
+              onChange={(event) => props.onPatchOptions({ customFont: event.target.value }, true)}
+              onBlur={props.onInputSessionEnd}
+              placeholder="예: KoPubWorldBatang"
+            />
           </Field>
           <Field label="굵기">
             <select value={options.fontWeight} onChange={(event) => props.onPatchOptions({ fontWeight: Number(event.target.value) })}>
