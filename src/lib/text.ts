@@ -15,15 +15,41 @@ export function diffRange(previous: string, next: string): { prefix: number; suf
   return { prefix, suffix }
 }
 
-export function splitBoundaryNewlines(text: string, suppressLead: boolean, suppressTrail: boolean) {
-  const lead = suppressLead && text.startsWith("\n") ? "\n" : ""
-  const withoutLead = lead ? text.slice(1) : text
-  const trail = suppressTrail && withoutLead.endsWith("\n") ? "\n" : ""
+export function paragraphSelectionRange(text: string, start: number, end: number) {
+  const rangeStart = Math.max(0, Math.min(start, end))
+  const rangeEnd = Math.min(text.length, Math.max(start, end))
+  let contentEnd = rangeEnd
+  while (contentEnd > rangeStart && text[contentEnd - 1] === "\n") contentEnd -= 1
+  const previousBreak = text.lastIndexOf("\n\n", Math.max(0, rangeStart - 1))
+  const nextBreak = text.indexOf("\n\n", Math.max(rangeStart, contentEnd - 1))
   return {
-    lead,
-    content: trail ? withoutLead.slice(0, -1) : withoutLead,
-    trail,
+    start: previousBreak === -1 ? 0 : previousBreak + 2,
+    end: nextBreak === -1 ? text.length : nextBreak,
   }
+}
+
+export function adjacentDeletionRange(
+  body: string,
+  start: number,
+  end: number,
+  caret: number,
+  direction: "backward" | "forward",
+) {
+  if (
+    direction === "backward"
+    && caret > 0
+    && (caret === start || body[caret - 1] === "\n" || body[caret - 1] === "\f")
+  ) {
+    return { start: caret - 1, end: caret, caret: caret - 1 }
+  }
+  if (
+    direction === "forward"
+    && caret < body.length
+    && (caret === end || body[caret] === "\n" || body[caret] === "\f")
+  ) {
+    return { start: caret, end: caret + 1, caret }
+  }
+  return null
 }
 
 export function applyFontMark(
@@ -51,7 +77,8 @@ export function applyFontMark(
     : retained
 }
 
-export function segmentOwnsCaret(start: number, end: number, offset: number, leadingSegment: boolean) {
+export function segmentOwnsCaret(start: number, end: number, bodyLength: number, offset: number) {
   if (offset < start || offset > end) return false
-  return leadingSegment || offset > start
+  if (offset === end) return end === bodyLength
+  return true
 }

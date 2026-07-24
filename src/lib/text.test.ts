@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { TextMark } from "../types"
-import { applyFontMark, diffRange, segmentOwnsCaret, splitBoundaryNewlines } from "./text"
+import { adjacentDeletionRange, applyFontMark, diffRange, paragraphSelectionRange, segmentOwnsCaret } from "./text"
 
 describe("diffRange", () => {
   it("finds an insertion in the middle", () => {
@@ -36,19 +36,46 @@ describe("diffRange", () => {
   })
 })
 
-describe("splitBoundaryNewlines", () => {
-  it("keeps the structural leading newline separate from a user newline", () => {
-    expect(splitBoundaryNewlines("\n\n다음 문단", true, false)).toEqual({
-      lead: "\n",
-      content: "\n다음 문단",
-      trail: "",
-    })
+describe("paragraphSelectionRange", () => {
+  const body = "첫 줄\n번역 줄\n\n다음 문단\n둘째 줄"
+
+  it("treats a single newline as a line break inside one paragraph", () => {
+    expect(paragraphSelectionRange(body, 1, 3)).toEqual({ start: 0, end: 8 })
   })
 
-  it("protects both alignment boundaries without losing logical newlines", () => {
-    const parts = splitBoundaryNewlines("\n\n\n", true, true)
-    expect(parts).toEqual({ lead: "\n", content: "\n", trail: "\n" })
-    expect(`${parts.lead}${parts.content}${parts.trail}`).toBe("\n\n\n")
+  it("expands a cross-paragraph selection through the last selected paragraph", () => {
+    expect(paragraphSelectionRange(body, 2, body.length)).toEqual({ start: 0, end: body.length })
+  })
+
+  it("does not include the next paragraph when trailing newlines are selected", () => {
+    expect(paragraphSelectionRange(body, 0, 10)).toEqual({ start: 0, end: 8 })
+  })
+})
+
+describe("adjacentDeletionRange", () => {
+  it("deletes the character before an automatic page boundary", () => {
+    expect(adjacentDeletionRange("12345678901234567890", 10, 20, 10, "backward"))
+      .toEqual({ start: 9, end: 10, caret: 9 })
+  })
+
+  it("deletes a manual page-break sentinel immediately before a page", () => {
+    const body = "앞쪽\f뒤쪽"
+    const pageStart = body.indexOf("\f") + 1
+    expect(adjacentDeletionRange(body, pageStart, body.length, pageStart, "backward"))
+      .toEqual({ start: pageStart - 1, end: pageStart, caret: pageStart - 1 })
+  })
+
+  it("deletes a line break whose caret anchor has no visible text", () => {
+    const body = "앞줄\n뒷줄"
+    expect(adjacentDeletionRange(body, 0, body.length, 3, "backward"))
+      .toEqual({ start: 2, end: 3, caret: 2 })
+    expect(adjacentDeletionRange(body, 0, body.length, 2, "forward"))
+      .toEqual({ start: 2, end: 3, caret: 2 })
+  })
+
+  it("does nothing away from a segment boundary", () => {
+    expect(adjacentDeletionRange("12345678901234567890", 10, 20, 14, "backward")).toBeNull()
+    expect(adjacentDeletionRange("12345678901234567890", 10, 20, 14, "forward")).toBeNull()
   })
 })
 
@@ -84,13 +111,13 @@ describe("applyFontMark", () => {
 })
 
 describe("segmentOwnsCaret", () => {
-  it("gives a shared alignment boundary to the preceding segment only", () => {
-    expect(segmentOwnsCaret(0, 5, 5, true)).toBe(true)
-    expect(segmentOwnsCaret(5, 10, 5, false)).toBe(false)
+  it("gives a shared page boundary to the following segment", () => {
+    expect(segmentOwnsCaret(0, 5, 10, 5)).toBe(false)
+    expect(segmentOwnsCaret(5, 10, 10, 5)).toBe(true)
   })
 
-  it("keeps real block-boundary start and end offsets restorable", () => {
-    expect(segmentOwnsCaret(10, 20, 10, true)).toBe(true)
-    expect(segmentOwnsCaret(10, 20, 20, true)).toBe(true)
+  it("keeps the final document offset restorable", () => {
+    expect(segmentOwnsCaret(10, 20, 20, 10)).toBe(true)
+    expect(segmentOwnsCaret(10, 20, 20, 20)).toBe(true)
   })
 })

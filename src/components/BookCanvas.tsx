@@ -4,7 +4,7 @@ import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, M
 import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
-import { diffRange, segmentOwnsCaret, splitBoundaryNewlines } from "../lib/text"
+import { adjacentDeletionRange, diffRange, segmentOwnsCaret } from "../lib/text"
 import type { BookDocument, DividerBlock, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
@@ -60,16 +60,9 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;")
 }
 
-function decoratedTextHtml(
-  document: BookDocument,
-  start: number,
-  end: number,
-  suppressLeadBreak: boolean,
-  suppressTrailBreak: boolean,
-) {
+function inlineTextHtml(document: BookDocument, start: number, end: number) {
   const page = { text: document.body.slice(start, end), start, end }
-  const slices = decoratePage(document.body, page, document.marks, document.options)
-  const html = slices.map((slice, index) => {
+  return decoratePage(document.body, page, document.marks, document.options).map((slice) => {
     const style = [
       slice.style.color ? `color:${escapeHtml(slice.style.color)}` : "",
       slice.style.backgroundColor ? `background-color:${escapeHtml(slice.style.backgroundColor)}` : "",
@@ -77,18 +70,35 @@ function decoratedTextHtml(
       slice.style.fontWeight ? `font-weight:${slice.style.fontWeight}` : "",
       slice.style.fontFamily ? `font-family:'${escapeHtml(slice.style.fontFamily.replace(/["'\\]/g, ""))}', 'Noto Serif KR', serif` : "",
     ].filter(Boolean).join(";")
-    const boundary = splitBoundaryNewlines(
-      slice.text,
-      suppressLeadBreak && index === 0,
-      suppressTrailBreak && index === slices.length - 1,
-    )
-    const bits = boundary.content.split(/(\n\n|\n)/)
-    const content = bits.map((bit) => bit === "\n\n"
-      ? `<span class="paragraph-gap" style="height:${document.options.paragraphSpacing}px"></span>`
-      : bit === "\n" ? "<br>" : `<span${style ? ` style="${style}"` : ""}>${escapeHtml(bit)}</span>`).join("")
-    return `${boundary.lead ? "<br>" : ""}${content}${boundary.trail ? "<br>" : ""}`
+    return slice.text.split(/(\n)/).map((bit) => bit === "\n"
+      ? "<br>"
+      : `<span${style ? ` style="${style}"` : ""}>${escapeHtml(bit)}</span>`).join("")
   }).join("")
-  return page.text.endsWith("\n") ? `${html}<span class="caret-anchor">&#8203;</span>` : html
+}
+
+function paragraphAlign(document: BookDocument, start: number, end: number) {
+  const mark = document.marks.find((item) => item.kind === "align" && item.start < end && item.end > start)
+  return mark && ["left", "center", "right", "justify"].includes(mark.value) ? mark.value : ""
+}
+
+function decoratedTextHtml(document: BookDocument, start: number, end: number) {
+  if (start === end) return ""
+  const html: string[] = []
+  let cursor = start
+  while (cursor < end) {
+    const nextBreak = document.body.indexOf("\n\n", cursor)
+    const paragraphEnd = nextBreak === -1 || nextBreak >= end ? end : nextBreak
+    if (paragraphEnd > cursor) {
+      const align = paragraphAlign(document, cursor, paragraphEnd)
+      html.push(`<span class="flow-text-block"${align ? ` style="text-align:${align}"` : ""}>${inlineTextHtml(document, cursor, paragraphEnd)}</span>`)
+    }
+    if (nextBreak === -1 || nextBreak >= end) break
+    html.push(`<span class="paragraph-gap" style="height:${document.options.paragraphSpacing}px"></span>`)
+    cursor = nextBreak + 2
+  }
+  return document.body.slice(start, end).endsWith("\n")
+    ? `${html.join("")}<span class="caret-anchor">&#8203;</span>`
+    : html.join("")
 }
 
 function editableNodeText(current: Node): string {
@@ -174,7 +184,9 @@ function placeCaret(editor: HTMLElement, offset: number) {
         const anchorText = node.nextSibling instanceof Element && node.nextSibling.classList.contains("caret-anchor")
           ? node.nextSibling.firstChild
           : null
-        if (anchorText?.nodeType === Node.TEXT_NODE) range.setStart(anchorText, 1)
+        if (anchorText?.nodeType === Node.TEXT_NODE) {
+          range.setStart(anchorText, Math.min(1, anchorText.nodeValue?.length ?? 0))
+        }
         else range.setStartAfter(node)
         placed = true
         return
@@ -224,7 +236,9 @@ function replaceSelectionWithText(editor: HTMLElement, text: string) {
   const anchorText = lastNode instanceof Element && lastNode.classList.contains("caret-anchor")
     ? lastNode.firstChild
     : null
-  if (anchorText?.nodeType === Node.TEXT_NODE) range.setStart(anchorText, 1)
+  if (anchorText?.nodeType === Node.TEXT_NODE) {
+    range.setStart(anchorText, Math.min(1, anchorText.nodeValue?.length ?? 0))
+  }
   else range.setStartAfter(lastNode)
   range.collapse(true)
   selection?.removeAllRanges()
@@ -236,10 +250,7 @@ function FlowTextSegment({
   start,
   end,
   isGap = false,
-  align,
-  suppressLeadBreak = false,
-  suppressTrailBreak = false,
-  leadingSegment = true,
+  precedingBlockId,
   followingBlockIds,
   pendingCaret,
   onSelectPage,
@@ -253,10 +264,7 @@ function FlowTextSegment({
   start: number
   end: number
   isGap?: boolean
-  align?: CSSProperties["textAlign"]
-  suppressLeadBreak?: boolean
-  suppressTrailBreak?: boolean
-  leadingSegment?: boolean
+  precedingBlockId: string | null
   followingBlockIds: string[]
   pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
@@ -272,10 +280,7 @@ function FlowTextSegment({
   const lastText = useRef("")
   const preserveKeyboardSelection = useRef(false)
   const composing = useRef(false)
-  const html = useMemo(
-    () => decoratedTextHtml(document, start, end, suppressLeadBreak, suppressTrailBreak),
-    [document, end, start, suppressLeadBreak, suppressTrailBreak],
-  )
+  const html = useMemo(() => decoratedTextHtml(document, start, end), [document, end, start])
   const beforeBlockId = followingBlockIds[0] ?? null
 
   useLayoutEffect(() => {
@@ -306,16 +311,13 @@ function FlowTextSegment({
   useLayoutEffect(() => {
     const editor = editorRef.current
     if (!editor || !pendingCaret || pendingCaret.beforeBlockId !== beforeBlockId) return
-    // Alignment can split one text run into adjacent editors with the same
-    // beforeBlockId. At their shared boundary only the leading segment owns the
-    // exact offset, preventing both effects from racing to restore the caret.
-    if (!segmentOwnsCaret(start, end, pendingCaret.offset, leadingSegment)) return
+    if (!segmentOwnsCaret(start, end, document.body.length, pendingCaret.offset)) return
     editor.focus({ preventScroll: true })
     placeCaret(editor, pendingCaret.offset - start)
     onSelectText({ start: pendingCaret.offset, end: pendingCaret.offset })
     editor.scrollIntoView({ block: "nearest" })
     queueMicrotask(onCaretRestored)
-  }, [beforeBlockId, end, leadingSegment, onCaretRestored, onSelectText, pendingCaret, start])
+  }, [beforeBlockId, document.body.length, end, onCaretRestored, onSelectText, pendingCaret, start])
 
   useEffect(() => () => {
     if (dirty.current) onInteractionEnd()
@@ -405,8 +407,7 @@ function FlowTextSegment({
   return (
     <div
       ref={editorRef}
-      className={`flow-text-segment${isGap ? " is-gap" : ""}${suppressLeadBreak ? " no-lead-break" : ""}${suppressTrailBreak ? " no-trail-break" : ""}`}
-      style={align ? { textAlign: align } : undefined}
+      className={`flow-text-segment${isGap ? " is-gap" : ""}`}
       contentEditable="plaintext-only"
       suppressContentEditableWarning
       spellCheck={false}
@@ -440,6 +441,44 @@ function FlowTextSegment({
       onSelect={updateSelection}
       onMouseUp={updateSelection}
       onKeyDown={(event) => {
+        if (
+          preserveKeyboardSelection.current
+          && !event.shiftKey
+          && ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)
+        ) {
+          event.preventDefault()
+          const collapseToEnd = event.key === "ArrowRight" || event.key === "ArrowDown"
+          const offset = collapseToEnd ? editableElementText(event.currentTarget).length : 0
+          preserveKeyboardSelection.current = false
+          placeCaret(event.currentTarget, offset)
+          onSelectText({ start: start + offset, end: start + offset })
+          return
+        }
+        if ((event.key === "Backspace" || event.key === "Delete") && !(event.nativeEvent as KeyboardEvent).isComposing) {
+          const selection = window.getSelection()
+          const editor = event.currentTarget
+          const ownsSelection = Boolean(
+            selection?.isCollapsed
+            && selection.focusNode
+            && editor.contains(selection.focusNode),
+          )
+          const caret = ownsSelection ? start + caretTextLength(editor) : -1
+          const deletion = ownsSelection
+            ? adjacentDeletionRange(document.body, start, end, caret, event.key === "Backspace" ? "backward" : "forward")
+            : null
+          if (deletion) {
+            event.preventDefault()
+            preserveKeyboardSelection.current = false
+            onInteractionStart()
+            dirty.current = true
+            onSelectText({ start: deletion.caret, end: deletion.caret })
+            onChange(deletion.start, deletion.end, "", followingBlockIds, {
+              offset: deletion.caret,
+              beforeBlockId: event.key === "Backspace" ? precedingBlockId : beforeBlockId,
+            })
+            return
+          }
+        }
         if (event.key === "Enter" && !(event.nativeEvent as KeyboardEvent).isComposing) {
           event.preventDefault()
           replaceSelectionWithText(event.currentTarget, "\n")
@@ -856,62 +895,35 @@ function PageFlowEditor({
     ...document.speechBubbles.filter((bubble) => bubble.page > 0).map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: bubble.flowRank ?? 0 })),
     ...document.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
   ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
-  // Paragraph alignment lives in "align" marks. A text run is split into
-  // sub-segments wherever the alignment changes, and each editable div gets its
-  // own text-align. The caret/offset model inside each segment is untouched, so
-  // this adds no risk to editing; with no align marks the output is identical to
-  // a single un-split run.
-  // Snap each align mark to the WHOLE paragraph(s) it touches, so a mark whose
-  // range has drifted off the exact \n boundaries (after edits) still aligns
-  // complete lines instead of splitting a paragraph mid-line into stacked divs.
-  const paraStartOf = (pos: number) => document.body.lastIndexOf("\n", pos - 1) + 1
-  const paraEndOf = (pos: number) => {
-    const nl = document.body.indexOf("\n", pos)
-    return nl === -1 ? document.body.length : nl
-  }
-  const alignRegions = document.marks
-    .filter((mark) => mark.kind === "align")
-    .map((mark) => ({
-      start: paraStartOf(mark.start),
-      end: paraEndOf(Math.max(mark.start, mark.end - 1)),
-      value: mark.value as CSSProperties["textAlign"],
-    }))
-  const alignFor = (from: number, to: number) =>
-    alignRegions.find((region) => region.start <= from && region.end >= to)?.value
   const nodes: ReactNode[] = []
   let cursor = page.start
 
-  const pushRun = (from: number, to: number, followingBlockIds: string[], keyId: string, isGap: boolean) => {
-    const bounds = new Set([from, to])
-    alignRegions.forEach((region) => {
-      if (region.start > from && region.start < to) bounds.add(region.start)
-      if (region.end > from && region.end < to) bounds.add(region.end)
-    })
-    const points = [...bounds].sort((left, right) => left - right)
-    const pairs = points.length > 1 ? points.slice(0, -1).map((value, index) => [value, points[index + 1]] as const) : [[from, to] as const]
-    pairs.forEach(([segStart, segEnd], index) => {
-      nodes.push(
-        <FlowTextSegment
-          key={`text:${segStart}:${keyId}${index ? `:${index}` : ""}`}
-          document={document}
-          start={segStart}
-          end={segEnd}
-          isGap={isGap && index === 0}
-          align={alignFor(segStart, segEnd)}
-          suppressLeadBreak={index > 0}
-          suppressTrailBreak={index < pairs.length - 1}
-          leadingSegment={index === 0}
-          followingBlockIds={followingBlockIds}
-          pendingCaret={pendingCaret}
-          onSelectPage={onSelectPage}
-          onChange={onChangePageText}
-          onCaretRestored={onCaretRestored}
-          onSelectText={onSelectText}
-          onInteractionStart={onInteractionStart}
-          onInteractionEnd={onInteractionEnd}
-        />,
-      )
-    })
+  const pushRun = (
+    from: number,
+    to: number,
+    precedingBlockId: string | null,
+    followingBlockIds: string[],
+    keyId: string,
+    isGap: boolean,
+  ) => {
+    nodes.push(
+      <FlowTextSegment
+        key={`text:${from}:${keyId}`}
+        document={document}
+        start={from}
+        end={to}
+        isGap={isGap}
+        precedingBlockId={precedingBlockId}
+        followingBlockIds={followingBlockIds}
+        pendingCaret={pendingCaret}
+        onSelectPage={onSelectPage}
+        onChange={onChangePageText}
+        onCaretRestored={onCaretRestored}
+        onSelectText={onSelectText}
+        onInteractionStart={onInteractionStart}
+        onInteractionEnd={onInteractionEnd}
+      />,
+    )
   }
 
   ordered.forEach((item, index) => {
@@ -919,6 +931,7 @@ function PageFlowEditor({
     pushRun(
       cursor,
       anchor,
+      index ? ordered[index - 1].id : null,
       globalOrder.slice(globalOrder.findIndex((block) => block.id === item.id)).map((block) => block.id),
       item.id,
       index > 0,
@@ -952,6 +965,7 @@ function PageFlowEditor({
   pushRun(
     cursor,
     page.end,
+    ordered.at(-1)?.id ?? null,
     (ordered.length
       ? globalOrder.slice(globalOrder.findIndex((item) => item.id === ordered.at(-1)?.id) + 1)
       : globalOrder.filter((block) => block.anchor >= page.end)

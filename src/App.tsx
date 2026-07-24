@@ -1,12 +1,14 @@
 import { Check, House, Menu, MousePointer2, Plus, Save, Trash2, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { BookCanvas } from "./components/BookCanvas"
+import { ExportTray } from "./components/ExportTray"
 import { HamsterMascot } from "./components/HamsterMascot"
 import { HomeScreen } from "./components/HomeScreen"
 import { Inspector } from "./components/Inspector"
 import { ToolRail } from "./components/ToolRail"
 import { DEFAULT_OPTIONS } from "./data/themes"
-import { copyBookPage, exportBook } from "./lib/export"
+import { copyBookPage, downloadExportFile, exportBook, saveExportFilesToDirectory, supportsDirectoryExport } from "./lib/export"
+import type { ExportFile } from "./lib/export"
 import { fitImageToPage } from "./lib/image"
 import {
   ACTIVE_BOOK_KEY,
@@ -20,7 +22,7 @@ import {
 } from "./lib/library"
 import { PAGE_BREAK, paginateText } from "./lib/pagination"
 import { estimateSpeechBubbleHeight, moveSpeechBubble, pageForAnchor, pageForBlock } from "./lib/speech"
-import { applyFontMark } from "./lib/text"
+import { applyFontMark, paragraphSelectionRange } from "./lib/text"
 import type {
   BookDocument,
   BookOptions,
@@ -337,6 +339,8 @@ export default function App() {
   const [toast, setToast] = useState<ToastState | null>(null)
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved")
   const [exporting, setExporting] = useState(false)
+  const [exportFiles, setExportFiles] = useState<ExportFile[]>([])
+  const [savingExportFiles, setSavingExportFiles] = useState(false)
   const [bubbleHeights, setBubbleHeights] = useState<Record<string, number>>({})
   const bubbleHeightsRef = useRef(bubbleHeights)
   const past = useRef<BookDocument[]>([])
@@ -1045,20 +1049,15 @@ export default function App() {
     })
   }
 
-  const setSelectionAlign = (value: string) => {
-    if (!textSelection || textSelection.start === textSelection.end) {
+  const setSelectionAlign = (value: string, savedSelection?: TextSelection | null) => {
+    const selection = savedSelection ?? textSelection
+    if (!selection || selection.start === selection.end) {
       notify("정렬할 문단의 글자를 먼저 선택해 주세요.", "warn")
       return
     }
-    const { start, end } = textSelection
     commit((current) => {
-      // Snap to whole paragraphs (alignment is a block property): grow to the
-      // start of the first line and the end of the last line the selection touches.
-      const paraStart = current.body.lastIndexOf("\n", start - 1) + 1
-      // Search from end-1 so a selection that includes the trailing newline
-      // (e.g. a triple-click) doesn't skip to the FOLLOWING paragraph's break.
-      const nextBreak = current.body.indexOf("\n", Math.max(start, end - 1))
-      const paraEnd = nextBreak === -1 ? current.body.length : nextBreak
+      // Single newlines are soft line breaks. Blank lines delimit paragraphs.
+      const { start: paraStart, end: paraEnd } = paragraphSelectionRange(current.body, selection.start, selection.end)
       // Replace any align marks overlapping this paragraph range.
       const marks = current.marks.filter((mark) => mark.kind !== "align" || mark.end <= paraStart || mark.start >= paraEnd)
       // "left" is the default — represented by the absence of a mark.
@@ -1186,16 +1185,36 @@ export default function App() {
     setExporting(true)
     notify("페이지를 이미지로 만들고 있어요.")
     try {
-      const exported = await exportBook(mode, selectedPage, documentState.title)
-      if (!exported) {
-        notify("내보내기를 취소했어요.")
+      const files = await exportBook(mode, selectedPage, documentState.title)
+      if (!files.length) {
+        notify("내보낼 페이지가 없어요.", "warn")
         return
       }
-      notify("이미지 저장을 시작했어요.", "success")
+      if (files.length === 1) {
+        downloadExportFile(files[0])
+        notify("PNG 이미지 저장을 시작했어요.", "success")
+        return
+      }
+      setExportFiles(files)
+      notify(`${files.length}개 PNG 파일을 준비했어요.`, "success")
     } catch {
       notify("이미지를 저장하지 못했어요. 외부 이미지나 글꼴을 확인해 주세요.", "warn")
     } finally {
       setExporting(false)
+    }
+  }
+
+  const savePreparedExports = async () => {
+    setSavingExportFiles(true)
+    try {
+      const saved = await saveExportFilesToDirectory(exportFiles)
+      if (!saved) return
+      setExportFiles([])
+      notify(`${exportFiles.length}개 PNG 파일을 폴더에 저장했어요.`, "success")
+    } catch {
+      notify("이 폴더에는 저장할 수 없어요. 다른 폴더를 고르거나 파일별 저장 버튼을 사용해 주세요.", "warn")
+    } finally {
+      setSavingExportFiles(false)
     }
   }
 
@@ -1487,6 +1506,14 @@ export default function App() {
           <kbd>Ctrl T</kbd>
         </div>
         <HamsterMascot message={mascotMessage} active={exporting || saveStatus === "saving"} />
+        <ExportTray
+          files={exportFiles}
+          saving={savingExportFiles}
+          canSaveDirectory={supportsDirectoryExport()}
+          onDownload={downloadExportFile}
+          onSaveDirectory={savePreparedExports}
+          onClose={() => setExportFiles([])}
+        />
       </section>
     </main>
   )

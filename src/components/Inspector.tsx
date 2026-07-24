@@ -67,7 +67,7 @@ type Props = {
   onSavePreset: (name: string) => void
   onDeletePreset: (id: string) => void
   onAddMark: (start: number, end: number, kind: MarkKind, value: string) => void
-  onSetAlign: (value: string) => void
+  onSetAlign: (value: string, selection?: TextSelection | null) => void
   onClearMarks: () => void
   onUploadCover: (file: File) => void
   onAddImage: (file: File) => void
@@ -323,8 +323,14 @@ function ManuscriptPanel(props: Props) {
   const options = props.document.options
   const [dividerStyle, setDividerStyle] = useState<DividerStyle>("diamond")
   const [dividerColor, setDividerColor] = useState(options.quoteColor)
+  const toolbarSelectionRef = useRef<TextSelection | null>(null)
+  const takeToolbarSelection = () => {
+    const selection = toolbarSelectionRef.current ?? props.textSelection
+    toolbarSelectionRef.current = null
+    return selection
+  }
   const addSelectionMark = (kind: MarkKind, value: string) => {
-    const selection = props.textSelection
+    const selection = takeToolbarSelection()
     if (!selection) {
       props.onNotify("페이지 본문에서 꾸밀 글자를 먼저 선택해 주세요.")
       return
@@ -370,7 +376,10 @@ function ManuscriptPanel(props: Props) {
             className="selection-toolbar"
             aria-label="선택한 글자 꾸미기"
             data-preserve-page-selection
-            onPointerDown={(event) => event.preventDefault()}
+            onPointerDown={(event) => {
+              toolbarSelectionRef.current = props.textSelection
+              event.preventDefault()
+            }}
           >
             <button className={hasSelectionMark("bold", "700") ? "is-active" : ""} type="button" onClick={() => addSelectionMark("bold", "700")} title="굵게">
               <Bold aria-hidden="true" />
@@ -405,18 +414,21 @@ function ManuscriptPanel(props: Props) {
             className="selection-toolbar"
             aria-label="문단 정렬"
             data-preserve-page-selection
-            onPointerDown={(event) => event.preventDefault()}
+            onPointerDown={(event) => {
+              toolbarSelectionRef.current = props.textSelection
+              event.preventDefault()
+            }}
           >
-            <button className={currentAlign === "left" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("left")} title="왼쪽 정렬">
+            <button className={currentAlign === "left" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("left", takeToolbarSelection())} title="왼쪽 정렬">
               <AlignLeft aria-hidden="true" />
             </button>
-            <button className={currentAlign === "center" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("center")} title="가운데 정렬">
+            <button className={currentAlign === "center" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("center", takeToolbarSelection())} title="가운데 정렬">
               <AlignCenter aria-hidden="true" />
             </button>
-            <button className={currentAlign === "right" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("right")} title="오른쪽 정렬">
+            <button className={currentAlign === "right" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("right", takeToolbarSelection())} title="오른쪽 정렬">
               <AlignRight aria-hidden="true" />
             </button>
-            <button className={currentAlign === "justify" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("justify")} title="양쪽 정렬">
+            <button className={currentAlign === "justify" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("justify", takeToolbarSelection())} title="양쪽 정렬">
               <AlignJustify aria-hidden="true" />
             </button>
           </div>
@@ -1035,11 +1047,11 @@ function ExportPanel(props: Props) {
           </button>
           <button className="export-choice" type="button" onClick={() => props.onExport("single")}>
             <FileDown aria-hidden="true" />
-            <span><strong>모든 페이지 낱장</strong><small>선택한 폴더에 PNG 파일로 한 장씩 저장</small></span>
+            <span><strong>모든 페이지 낱장</strong><small>페이지별 PNG 파일 준비</small></span>
           </button>
           <button className="export-choice" type="button" onClick={() => props.onExport("spread")}>
             <BookSpreadIcon />
-            <span><strong>양면 펼침</strong><small>표지+1쪽부터 묶어 선택한 폴더에 PNG로 저장</small></span>
+            <span><strong>양면 펼침</strong><small>표지+1쪽부터 묶어 PNG 파일 준비</small></span>
           </button>
         </Section>
         <Section title="작업 파일" open={false}>

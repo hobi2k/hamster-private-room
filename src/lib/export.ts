@@ -10,10 +10,15 @@ export type ExportDirectory = {
   }>
 }
 
-function downloadBlob(blob: Blob, filename: string) {
+export type ExportFile = {
+  filename: string
+  blob: Blob
+}
+
+export function downloadExportFile(file: ExportFile) {
   const link = document.createElement("a")
-  const url = URL.createObjectURL(blob)
-  link.download = filename
+  const url = URL.createObjectURL(file.blob)
+  link.download = file.filename
   link.href = url
   document.body.append(link)
   link.click()
@@ -43,25 +48,25 @@ export async function writeExportFile(directory: ExportDirectory, blob: Blob, fi
   await writable.close()
 }
 
-async function saveCanvas(canvas: HTMLCanvasElement, filename: string, directory?: ExportDirectory) {
-  const blob = await canvasToBlob(canvas)
-  if (directory) {
-    await writeExportFile(directory, blob, filename)
-    return
-  }
-  downloadBlob(blob, filename)
+async function exportCanvas(canvas: HTMLCanvasElement, filename: string): Promise<ExportFile> {
+  return { filename, blob: await canvasToBlob(canvas) }
 }
 
-async function chooseExportDirectory(mode: ExportMode) {
-  if (mode === "selected") return undefined
+export function supportsDirectoryExport() {
+  return typeof (window as Window & { showDirectoryPicker?: unknown }).showDirectoryPicker === "function"
+}
+
+export async function saveExportFilesToDirectory(files: ExportFile[]) {
   const picker = (window as Window & {
     showDirectoryPicker?: (options: { id: string; mode: "readwrite" }) => Promise<ExportDirectory>
   }).showDirectoryPicker
-  if (!picker) return undefined
+  if (!picker) return false
   try {
-    return await picker.call(window, { id: "hamster-book-export", mode: "readwrite" })
+    const directory = await picker.call(window, { id: "hamster-book-export", mode: "readwrite" })
+    for (const file of files) await writeExportFile(directory, file.blob, file.filename)
+    return true
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") return null
+    if (error instanceof DOMException && error.name === "AbortError") return false
     throw error
   }
 }
@@ -94,35 +99,32 @@ export async function copyBookPage(selectedPage: number) {
 
 export async function exportBook(mode: ExportMode, selectedPage: number, title: string) {
   const pages = Array.from(document.querySelectorAll<HTMLElement>("[data-book-page]"))
-  if (!pages.length) return false
-  const directory = await chooseExportDirectory(mode)
-  if (directory === null) return false
+  if (!pages.length) return []
   document.body.classList.add("is-exporting")
   const safeTitle = title.trim().replace(/[\\/:*?"<>|]/g, "-") || "hamster-book"
   try {
     if (mode === "selected") {
       const selected = findPage(selectedPage)
-      if (!selected) return false
-      await saveCanvas(await capture(selected), `${safeTitle}-page-${selectedPage}.png`)
-      return true
+      if (!selected) return []
+      return [await exportCanvas(await capture(selected), `${safeTitle}-page-${selectedPage}.png`)]
     }
     const pageLabel = (page: HTMLElement, fallback: number) => page.dataset.pageIndex ?? String(fallback)
     if (mode === "single") {
+      const files: ExportFile[] = []
       for (const [index, page] of pages.entries()) {
-        await saveCanvas(await capture(page), `${safeTitle}-page-${pageLabel(page, index)}.png`, directory)
-        if (!directory) await new Promise((resolve) => window.setTimeout(resolve, 180))
+        files.push(await exportCanvas(await capture(page), `${safeTitle}-page-${pageLabel(page, index)}.png`))
       }
-      return true
+      return files
     }
     // Pair the rendered order directly: with a cover this yields (cover, 1),
     // then (2, 3), while a final unpaired page remains a single PNG.
+    const files: ExportFile[] = []
     for (const pair of planSpreadExport(pages.length)) {
       const leftEl = pages[pair.left]
       const rightEl = pair.right === null ? null : pages[pair.right]
       const left = await capture(leftEl)
       if (!rightEl) {
-        await saveCanvas(left, `${safeTitle}-page-${pageLabel(leftEl, pair.left)}.png`, directory)
-        if (!directory) await new Promise((resolve) => window.setTimeout(resolve, 180))
+        files.push(await exportCanvas(left, `${safeTitle}-page-${pageLabel(leftEl, pair.left)}.png`))
         continue
       }
       const right = await capture(rightEl)
@@ -135,14 +137,12 @@ export async function exportBook(mode: ExportMode, selectedPage: number, title: 
       context.fillRect(0, 0, spread.width, spread.height)
       context.drawImage(left, 0, 0)
       context.drawImage(right, left.width, 0)
-      await saveCanvas(
+      files.push(await exportCanvas(
         spread,
         `${safeTitle}-spread-${pageLabel(leftEl, pair.left)}-${pageLabel(rightEl, pair.right ?? pair.left + 1)}.png`,
-        directory,
-      )
-      if (!directory) await new Promise((resolve) => window.setTimeout(resolve, 180))
+      ))
     }
-    return true
+    return files
   } finally {
     document.body.classList.remove("is-exporting")
   }
