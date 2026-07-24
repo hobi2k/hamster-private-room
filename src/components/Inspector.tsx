@@ -142,13 +142,45 @@ function RangeField({
   suffix?: string
   onChange: (value: number) => void
 }) {
+  // Keep the thumb/readout responsive with local state during a drag, but only
+  // commit (one history entry) when the interaction ends — otherwise every
+  // pointer tick pushes an undo step and floods history.
+  const [live, setLive] = useState(value)
+  const dragging = useRef(false)
+  useEffect(() => {
+    if (!dragging.current) setLive(value)
+  }, [value])
+  const display = live
   return (
     <label className="range-field">
       <span>
         {label}
-        <output>{Number.isInteger(value) ? value : value.toFixed(2)}{suffix}</output>
+        <output>{Number.isInteger(display) ? display : display.toFixed(2)}{suffix}</output>
       </span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={display}
+        onChange={(event) => {
+          dragging.current = true
+          setLive(Number(event.target.value))
+        }}
+        onPointerUp={(event) => {
+          dragging.current = false
+          onChange(Number(event.currentTarget.value))
+        }}
+        onKeyUp={(event) => {
+          dragging.current = false
+          onChange(Number(event.currentTarget.value))
+        }}
+        onBlur={(event) => {
+          if (!dragging.current) return
+          dragging.current = false
+          onChange(Number(event.currentTarget.value))
+        }}
+      />
     </label>
   )
 }
@@ -159,7 +191,8 @@ function ColorInput({ value, onChange, label }: { value: string; onChange: (valu
       <input
         type="color"
         value={value}
-        onInput={(event) => onChange(event.currentTarget.value)}
+        // Only commit on change (picker close); binding onInput too fired a
+        // duplicate history entry for every event.
         onChange={(event) => onChange(event.currentTarget.value)}
       />
       <span style={{ background: value }} />
@@ -175,7 +208,7 @@ function AvatarCropper({ member, onChange }: { member: MemberProfile; onChange: 
     startY: number
     originX: number
     originY: number
-    rect: DOMRect
+    rect: { width: number; height: number }
     position: { x: number; y: number }
   } | null>(null)
 
@@ -191,7 +224,9 @@ function AvatarCropper({ member, onChange }: { member: MemberProfile; onChange: 
       startY: event.clientY,
       originX: position.x,
       originY: position.y,
-      rect: event.currentTarget.getBoundingClientRect(),
+      // Use the padding box (clientWidth/Height) — the image's left/top % resolve
+      // against it, so a border-box rect would make the avatar pan too slowly.
+      rect: { width: event.currentTarget.clientWidth, height: event.currentTarget.clientHeight },
       position,
     }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -234,8 +269,9 @@ function AvatarCropper({ member, onChange }: { member: MemberProfile; onChange: 
           style={{ ...avatarStyle(member), left: `${position.x}%`, top: `${position.y}%` }}
           onLoad={(event) => {
             if (member.avatarAspectRatio) return
+            const { naturalWidth, naturalHeight } = event.currentTarget
             onChange({
-              avatarAspectRatio: event.currentTarget.naturalWidth / Math.max(1, event.currentTarget.naturalHeight),
+              avatarAspectRatio: (naturalWidth || naturalHeight || 1) / Math.max(1, naturalHeight),
               avatarX: 50,
               avatarY: 50,
             })
@@ -467,7 +503,17 @@ function ThemePanel(props: Props) {
     <>
       <PanelHeader
         title="전체 테마"
-        onReset={() => props.onPatchOptions({ ...DEFAULT_OPTIONS, coverImage: props.document.options.coverImage })}
+        onReset={() => props.onPatchOptions({
+          ...DEFAULT_OPTIONS,
+          // Theme reset restores visual defaults only — the user's cover content
+          // (authored in the manuscript panel) must be preserved.
+          coverMode: props.document.options.coverMode,
+          coverTitle: props.document.options.coverTitle,
+          coverTitleColor: props.document.options.coverTitleColor,
+          coverSubtitle: props.document.options.coverSubtitle,
+          coverSubtitleColor: props.document.options.coverSubtitleColor,
+          coverImage: props.document.options.coverImage,
+        })}
       />
       <div className="panel-scroll">
         <div className="theme-list">

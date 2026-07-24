@@ -113,7 +113,7 @@ export function decoratePage(
   marks: TextMark[],
   options: BookOptions,
 ): DecoratedSlice[] {
-  const ranges: Array<{ start: number; end: number; style: TextStyle }> = marks.map((mark) => ({
+  const userRanges: Array<{ start: number; end: number; style: TextStyle }> = marks.map((mark) => ({
     start: mark.start,
     end: mark.end,
     style:
@@ -126,16 +126,21 @@ export function decoratePage(
             : { fontWeight: 700 },
   }))
 
-  const smartRanges = [
+  const smartRanges: Array<{ start: number; end: number; style: TextStyle }> = []
+  const smartDefs = [
     { expression: /"[^"]+"|“[^”]+”|‘[^’]+’/g, style: { color: options.quoteColor, fontStyle: options.quoteItalic ? "italic" : undefined } },
     { expression: /\([^)]*\)|\[[^\]]*\]/g, style: { color: options.bracketColor, fontStyle: options.bracketItalic ? "italic" : undefined } },
   ]
-  smartRanges.forEach(({ expression, style }) => {
+  smartDefs.forEach(({ expression, style }) => {
     Array.from(body.matchAll(expression)).forEach((match) => {
       const start = match.index ?? 0
-      ranges.push({ start, end: start + match[0].length, style })
+      smartRanges.push({ start, end: start + match[0].length, style })
     })
   })
+
+  // Smart (auto) styling first, explicit user marks last, so user marks win on
+  // overlap. undefined style values must not clobber an underlying value.
+  const ranges = [...smartRanges, ...userRanges]
 
   const boundaries = new Set([page.start, page.end])
   ranges.forEach((range) => {
@@ -148,7 +153,14 @@ export function decoratePage(
     const end = sorted[index + 1]
     const style = ranges
       .filter((range) => range.start < end && range.end > start)
-      .reduce<TextStyle>((merged, range) => ({ ...merged, ...range.style }), {})
+      .reduce<TextStyle>((merged, range) => {
+        const next = { ...merged }
+        for (const key of Object.keys(range.style) as Array<keyof TextStyle>) {
+          const value = range.style[key]
+          if (value !== undefined) (next as Record<string, unknown>)[key] = value
+        }
+        return next
+      }, {})
     return { text: body.slice(start, end), style }
   })
 }

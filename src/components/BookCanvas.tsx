@@ -4,6 +4,7 @@ import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, M
 import { avatarStyle } from "../lib/avatar"
 import { decoratePage } from "../lib/pagination"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
+import { diffRange } from "../lib/text"
 import type { BookDocument, DividerBlock, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
@@ -245,6 +246,7 @@ function FlowTextSegment({
   const editorRef = useRef<HTMLDivElement>(null)
   const dirty = useRef(false)
   const editEnd = useRef(end)
+  const lastText = useRef("")
   const preserveKeyboardSelection = useRef(false)
   const composing = useRef(false)
   const html = useMemo(() => decoratedTextHtml(document, start, end), [document, end, start])
@@ -290,15 +292,21 @@ function FlowTextSegment({
     if (!dirty.current) {
       onInteractionStart()
       editEnd.current = end
+      lastText.current = document.body.slice(start, end)
     }
     dirty.current = true
     const text = editableElementText(editor)
     const caret = start + caretTextLength(editor)
-    onChange(start, editEnd.current, text, followingBlockIds, {
+    // Replace only the span that actually changed (common prefix/suffix diff) so
+    // text marks and neighbouring blocks outside the edit are preserved, not
+    // wiped by a whole-segment rewrite on every keystroke.
+    const { prefix, suffix } = diffRange(lastText.current, text)
+    onChange(start + prefix, editEnd.current - suffix, text.slice(prefix, text.length - suffix), followingBlockIds, {
       offset: caret,
       beforeBlockId,
     })
     editEnd.current = start + text.length
+    lastText.current = text
   }
 
   const applyCut = (event: ClipboardEvent<HTMLDivElement>) => {
@@ -334,11 +342,13 @@ function FlowTextSegment({
     if (hasNativeSelection) selection?.deleteFromDocument()
     else editor.textContent = next
     onSelectText({ start: start + cutStart, end: start + cutStart })
-    onChange(start, editEnd.current, next, followingBlockIds, {
+    // Only the cut span is removed, so marks/blocks outside it are preserved.
+    onChange(start + cutStart, start + cutEnd, "", followingBlockIds, {
       offset: start + cutStart,
       beforeBlockId,
     })
     editEnd.current = start + next.length
+    lastText.current = next
   }
 
   return (
@@ -369,7 +379,9 @@ function FlowTextSegment({
       }}
       onPaste={(event) => {
         event.preventDefault()
-        replaceSelectionWithText(event.currentTarget, event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n"))
+        // Strip form-feed: it is the internal page-break sentinel, so pasted \f
+        // would silently split the page and shove trailing text out of view.
+        replaceSelectionWithText(event.currentTarget, event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n").replace(/\f/g, ""))
         applyEditorChange(event.currentTarget)
       }}
       onCut={applyCut}
@@ -441,7 +453,9 @@ function ImageItem({
     if (!page) return
     const pageRect = page.getBoundingClientRect()
     const centerX = pageRect.left + ((layer.x + layer.width / 2) / 100) * pageRect.width
-    const centerY = pageRect.top + (layer.y / 100) * pageRect.height + (layer.width / 200) * pageRect.width
+    // Half-height must use aspectRatio to match move()'s pivot, otherwise the
+    // rotation snaps the instant the handle is grabbed.
+    const centerY = pageRect.top + (layer.y / 100) * pageRect.height + (layer.width / (200 * (layer.aspectRatio ?? 1))) * pageRect.width
     session.current = {
       action,
       id: layer.id,
@@ -635,7 +649,11 @@ function SpeechBubbleItem({
         left: flow ? undefined : bubble.side === "left" ? "8%" : "auto",
         right: flow ? undefined : bubble.side === "right" ? "8%" : "auto",
         top: flow ? undefined : `${top ?? bubble.y}%`,
-        width: `${bubble.autoWidth === false ? bubble.width : speechBubbleWidth(bubble, speakerName, Boolean(avatar))}%`,
+        // Width is a share of the full page. In flow the layer lives inside the
+        // narrower text column, so `%` would resolve against the wrong box and
+        // clip un-wrappable text — use cqw (relative to .book-page) to match the
+        // avatar/padding units and estimateSpeechBubbleHeight's page-width basis.
+        width: `${bubble.autoWidth === false ? bubble.width : speechBubbleWidth(bubble, speakerName, Boolean(avatar))}cqw`,
         zIndex: bubble.zIndex + 10,
         "--bubble-color": bubbleColor,
         "--bubble-text": textColor,
@@ -664,7 +682,18 @@ function SpeechBubbleItem({
           <button type="button" onClick={() => onMove(1)} title="말풍선 아래로 이동" aria-label="말풍선 아래로 이동">
             <ArrowDown aria-hidden="true" />
           </button>
-          <button type="button" onClick={() => onChange({ side: bubble.side === "left" ? "right" : "left" })} title="말풍선 좌우 바꾸기" aria-label="말풍선 좌우 바꾸기">
+          <button
+            type="button"
+            onClick={() => {
+              // Bracket this one-shot transient patch so it is recorded in
+              // history (otherwise the side-swap is not undoable).
+              onInteractionStart()
+              onChange({ side: bubble.side === "left" ? "right" : "left" })
+              onInteractionEnd()
+            }}
+            title="말풍선 좌우 바꾸기"
+            aria-label="말풍선 좌우 바꾸기"
+          >
             <ArrowLeftRight aria-hidden="true" />
           </button>
           <button className="speech-delete" type="button" onClick={onDelete} title="말풍선 삭제" aria-label="말풍선 삭제">
@@ -754,14 +783,19 @@ function PageFlowEditor({
   onInteractionStart: () => void
   onInteractionEnd: () => void
 }) {
+  // Same-anchor ties: bubbles (rank 0) before dividers (rank 1), matching the
+  // pagination order in App.documentFlowBlocks. bubble.zIndex and divider.order
+  // are independent counters, so comparing them directly would order blocks
+  // arbitrarily and flip them on every edit — rank keeps render and pagination
+  // in lock-step.
   const ordered = [
-    ...bubbles.map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, type: "bubble" as const, bubble })),
-    ...dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, type: "divider" as const, divider })),
-  ].sort((left, right) => left.anchor - right.anchor || left.order - right.order)
+    ...bubbles.map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: 0, type: "bubble" as const, bubble })),
+    ...dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1, type: "divider" as const, divider })),
+  ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
   const globalOrder = [
-    ...document.speechBubbles.filter((bubble) => bubble.page > 0).map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex })),
-    ...document.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order })),
-  ].sort((left, right) => left.anchor - right.anchor || left.order - right.order)
+    ...document.speechBubbles.filter((bubble) => bubble.page > 0).map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: 0 })),
+    ...document.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
+  ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
   const nodes: ReactNode[] = []
   let cursor = page.start
 

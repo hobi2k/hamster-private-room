@@ -61,22 +61,35 @@ export async function exportBook(mode: ExportMode, selectedPage: number, title: 
       download(await capture(selected), `${safeTitle}-page-${selectedPage}.png`)
       return
     }
+    const pageLabel = (page: HTMLElement, fallback: number) => page.dataset.pageIndex ?? String(fallback)
     if (mode === "single") {
       for (const [index, page] of pages.entries()) {
-        download(await capture(page), `${safeTitle}-page-${index}.png`)
+        // Use the logical page number, not the raw array index (which is
+        // off-by-one for coverless books).
+        download(await capture(page), `${safeTitle}-page-${pageLabel(page, index)}.png`)
         await new Promise((resolve) => window.setTimeout(resolve, 180))
       }
       return
     }
-    for (const [spreadIndex, pair] of planSpreadExport(pages.length).entries()) {
-      const left = await capture(pages[pair.left])
-      if (pair.right === null) {
-        const pageNumber = pages[pair.left].dataset.pageIndex ?? pair.left
-        download(left, `${safeTitle}-page-${pageNumber}.png`)
+    // Spread mode: the cover (page 0) stands alone; content pages face each other
+    // as (1,2),(3,4),... Pairing by raw array index would glue the cover to
+    // page 1 and shift every subsequent facing pair.
+    const cover = pages[0]?.dataset.pageIndex === "0" ? pages[0] : null
+    const content = cover ? pages.slice(1) : pages
+    if (cover) {
+      download(await capture(cover), `${safeTitle}-page-0.png`)
+      await new Promise((resolve) => window.setTimeout(resolve, 180))
+    }
+    for (let index = 0; index < content.length; index += 2) {
+      const leftEl = content[index]
+      const rightEl = content[index + 1] ?? null
+      const left = await capture(leftEl)
+      if (!rightEl) {
+        download(left, `${safeTitle}-page-${pageLabel(leftEl, index + (cover ? 1 : 0))}.png`)
         await new Promise((resolve) => window.setTimeout(resolve, 180))
         continue
       }
-      const right = await capture(pages[pair.right])
+      const right = await capture(rightEl)
       const spread = document.createElement("canvas")
       spread.width = left.width + right.width
       spread.height = Math.max(left.height, right.height)
@@ -86,7 +99,7 @@ export async function exportBook(mode: ExportMode, selectedPage: number, title: 
       context.fillRect(0, 0, spread.width, spread.height)
       context.drawImage(left, 0, 0)
       context.drawImage(right, left.width, 0)
-      download(spread, `${safeTitle}-spread-${spreadIndex + 1}.png`)
+      download(spread, `${safeTitle}-spread-${index / 2 + 1}.png`)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
     }
   } finally {

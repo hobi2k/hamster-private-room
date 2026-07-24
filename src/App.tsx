@@ -238,7 +238,9 @@ async function imageFileToDataUrl(file: File) {
 function imageAspectRatio(src: string) {
   return new Promise<number>((resolve) => {
     const image = new Image()
-    image.addEventListener("load", () => resolve(image.naturalWidth / Math.max(1, image.naturalHeight)), { once: true })
+    // Guard the numerator too: a dimensionless image (some SVGs) reports
+    // naturalWidth 0, which would otherwise distort the avatar to ~1000% height.
+    image.addEventListener("load", () => resolve((image.naturalWidth || image.naturalHeight || 1) / Math.max(1, image.naturalHeight)), { once: true })
     image.addEventListener("error", () => resolve(1), { once: true })
     image.src = src
   })
@@ -306,6 +308,7 @@ export default function App() {
   const future = useRef<BookDocument[]>([])
   const transientStart = useRef<BookDocument | null>(null)
   const transientChanged = useRef(false)
+  const saveErrorNotified = useRef(false)
   const documentRef = useRef(documentState)
   const bookSlotsRef = useRef(bookSlots)
   const [, refreshHistory] = useReducer((value: number) => value + 1, 0)
@@ -343,8 +346,13 @@ export default function App() {
   }, [])
 
   const updateTransient = useCallback((update: (current: BookDocument) => BookDocument) => {
-    transientChanged.current = true
-    setDocumentState((current) => update(current))
+    setDocumentState((current) => {
+      const next = update(current)
+      // Only flag a history entry when the document actually changed, so no-op
+      // transient interactions don't create phantom undo steps.
+      if (next !== current) transientChanged.current = true
+      return next
+    })
   }, [])
 
   const beginTransient = useCallback(() => {
@@ -393,12 +401,19 @@ export default function App() {
       try {
         persistBook(activeBookId, documentState)
         setSaveStatus("saved")
+        saveErrorNotified.current = false
       } catch {
         setSaveStatus("error")
+        // Alert once when saving starts failing so edits aren't silently lost
+        // (localStorage is full — usually too many/large images).
+        if (!saveErrorNotified.current) {
+          saveErrorNotified.current = true
+          notify("저장 공간이 가득 찼어요. 변경사항이 안 담길 수 있으니 작업 파일로 내보내 주세요.", "warn")
+        }
       }
     }, 420)
     return () => window.clearTimeout(timeout)
-  }, [activeBookId, documentState, persistBook, screen])
+  }, [activeBookId, documentState, notify, persistBook, screen])
 
   useEffect(() => {
     localStorage.setItem(PRESET_KEY, JSON.stringify(customPresets))
@@ -429,11 +444,25 @@ export default function App() {
     if (!pageNumbers.length) return
     setPendingCaret(null)
     const contentPages = pageNumbers.filter((page) => page > 0)
-    const ranges = contentPages.map((page) => pages[page - 1]).filter(Boolean).map((page) => {
-      if (documentState.body[page.end] === PAGE_BREAK) return { start: page.start, end: page.end + 1 }
-      if (page.start > 0 && documentState.body[page.start - 1] === PAGE_BREAK) return { start: page.start - 1, end: page.end }
-      return { start: page.start, end: page.end }
-    })
+    // Group consecutive pages into runs and drop at most ONE adjacent page break
+    // per run. A per-page heuristic would strip both the leading and trailing
+    // break of an auto-flowed section, wrongly merging its neighbours.
+    const runs = contentPages.reduce<number[][]>((groups, page) => {
+      const last = groups.at(-1)
+      if (last && page === last.at(-1)! + 1) last.push(page)
+      else groups.push([page])
+      return groups
+    }, [])
+    const ranges = runs.map((run) => {
+      const first = pages[run[0] - 1]
+      const last = pages[run.at(-1)! - 1]
+      if (!first || !last) return null
+      let start = first.start
+      let end = last.end
+      if (documentState.body[end] === PAGE_BREAK) end += 1
+      else if (start > 0 && documentState.body[start - 1] === PAGE_BREAK) start -= 1
+      return { start, end }
+    }).filter((range): range is { start: number; end: number } => range !== null)
     const removed = new Set(pageNumbers)
     const remapPage = (page: number) => page === 0 ? 0 : page - contentPages.filter((deleted) => deleted < page).length
     commit((current) => {
@@ -451,7 +480,7 @@ export default function App() {
         body: text.body,
         marks: text.marks,
         options,
-        images: current.images.filter((image) => !removed.has(image.page)).map((image) => ({ ...image, page: remapPage(image.page) })),
+        images: current.images.filter((image) => !removed.has(image.page)).map((image) => ({ ...image, page: Math.min(remapPage(image.page), nextPages.length) })),
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
           ...bubble,
           page: pageForBlock(bubble.id, nextPages) || pageForAnchor(bubble.anchor, nextPages),
@@ -609,7 +638,18 @@ export default function App() {
         marks: current.marks.flatMap((mark) => {
           if (mark.end <= start) return mark
           if (mark.start >= end) return { ...mark, start: mark.start + delta, end: mark.end + delta }
-          return []
+          // A pure insertion inside a mark grows it; otherwise keep the mark's
+          // surviving prefix/suffix instead of dropping the whole mark.
+          if (start === end) return { ...mark, end: mark.end + delta }
+          const parts: Array<{ start: number; end: number }> = []
+          if (mark.start < start) parts.push({ start: mark.start, end: start })
+          if (mark.end > end) parts.push({ start: end + delta, end: mark.end + delta })
+          return parts.filter((part) => part.end > part.start).map((part, index) => ({
+            ...mark,
+            id: index ? crypto.randomUUID() : mark.id,
+            start: part.start,
+            end: part.end,
+          }))
         }),
       }
     })
@@ -860,9 +900,9 @@ export default function App() {
     const bubble = current.speechBubbles.find((item) => item.id === id)
     if (!bubble || bubble.page === 0) return
     const globalOrder = [
-      ...current.speechBubbles.filter((item) => item.page > 0).map((item) => ({ id: item.id, anchor: item.anchor, order: item.zIndex })),
-      ...current.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order })),
-    ].sort((left, right) => left.anchor - right.anchor || left.order - right.order)
+      ...current.speechBubbles.filter((item) => item.page > 0).map((item) => ({ id: item.id, anchor: item.anchor, order: item.zIndex, rank: 0 })),
+      ...current.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
+    ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
     const next = globalOrder[globalOrder.findIndex((item) => item.id === id) + 1] ?? null
     setPendingCaret({ offset: bubble.anchor, beforeBlockId: next ? next.id : null })
     notify("말풍선 사이에 바로 글을 쓸 수 있어요.", "success")
@@ -979,15 +1019,21 @@ export default function App() {
   }
 
   const importProject = async (file: File) => {
+    let imported: BookDocument
     try {
       const parsed = JSON.parse(await file.text()) as BookDocument
       if (parsed.version !== 1 || typeof parsed.body !== "string" || !parsed.options) throw new Error("invalid")
-      const imported = { ...normalizeDocument(parsed), updatedAt: new Date().toISOString() }
+      imported = { ...normalizeDocument(parsed), updatedAt: new Date().toISOString() }
+    } catch {
+      notify("이 앱에서 만든 작업 파일인지 확인해 주세요.", "warn")
+      return
+    }
+    try {
       const id = `book-${crypto.randomUUID()}`
       persistBook(id, imported)
       activateBook(id, imported, "작업 파일을 새 책으로 불러왔어요.")
     } catch {
-      notify("이 앱에서 만든 작업 파일인지 확인해 주세요.", "warn")
+      notify("불러왔지만 브라우저 저장 공간이 부족해 담아두지 못했어요. 이미지 수를 줄여 주세요.", "warn")
     }
   }
 
