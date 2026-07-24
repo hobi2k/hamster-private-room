@@ -126,7 +126,9 @@ export function decoratePage(
             ? { fontStyle: "italic" }
             : mark.kind === "font"
               ? { fontFamily: mark.value }
-              : { fontWeight: 700 },
+              : mark.kind === "align"
+                ? {} // paragraph alignment is applied on the block, not as inline text style
+                : { fontWeight: 700 },
   }))
 
   const smartRanges: Array<{ start: number; end: number; style: TextStyle }> = []

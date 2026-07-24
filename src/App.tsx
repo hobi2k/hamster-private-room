@@ -924,6 +924,26 @@ export default function App() {
     })
   }
 
+  const setSelectionAlign = (value: string) => {
+    if (!textSelection || textSelection.start === textSelection.end) {
+      notify("정렬할 문단의 글자를 먼저 선택해 주세요.", "warn")
+      return
+    }
+    const { start, end } = textSelection
+    commit((current) => {
+      // Snap to whole paragraphs (alignment is a block property): grow to the
+      // start of the first line and the end of the last line the selection touches.
+      const paraStart = current.body.lastIndexOf("\n", start - 1) + 1
+      const nextBreak = current.body.indexOf("\n", end)
+      const paraEnd = nextBreak === -1 ? current.body.length : nextBreak
+      // Replace any align marks overlapping this paragraph range.
+      const marks = current.marks.filter((mark) => mark.kind !== "align" || mark.end <= paraStart || mark.start >= paraEnd)
+      // "left" is the default — represented by the absence of a mark.
+      if (value === "left" || paraStart >= paraEnd) return { ...current, marks }
+      return { ...current, marks: [...marks, { id: crypto.randomUUID(), start: paraStart, end: paraEnd, kind: "align" as const, value }] }
+    })
+  }
+
   const currentFooter = documentState.footers[selectedPage] ?? {
     title: documentState.title,
     subtitle: "",
@@ -1206,6 +1226,7 @@ export default function App() {
         onSavePreset={savePreset}
         onDeletePreset={(id) => setCustomPresets((current) => current.filter((preset) => preset.id !== id))}
         onAddMark={addMark}
+        onSetAlign={setSelectionAlign}
         onClearMarks={() => commit((current) => ({ ...current, marks: [] }))}
         onUploadCover={uploadCover}
         onAddImage={(file) => addImage(file)}

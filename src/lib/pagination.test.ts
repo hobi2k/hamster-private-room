@@ -49,6 +49,16 @@ describe("decoratePage mark handling", () => {
     expect(plain?.style.fontFamily).toBeUndefined()
   })
 
+  it("does not emit any inline style for an align mark (alignment is block-level)", () => {
+    const body = "정렬 대상 문단"
+    const marks: TextMark[] = [{ id: "al", start: 0, end: body.length, kind: "align", value: "center" }]
+    const slices = decoratePage(body, page(body), marks, DEFAULT_OPTIONS)
+    slices.forEach((slice) => {
+      expect(slice.style.fontWeight).toBeUndefined() // must not fall through to the bold default
+      expect(slice.style.color).toBeUndefined()
+    })
+  })
+
   it("lets a user mark win over smart-quote styling without undefined clobbering", () => {
     const body = '"인용"'
     const marks: TextMark[] = [

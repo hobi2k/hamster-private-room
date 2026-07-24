@@ -1,4 +1,8 @@
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   ArrowDown,
   ArrowLeftRight,
   ArrowUp,
@@ -63,6 +67,7 @@ type Props = {
   onSavePreset: (name: string) => void
   onDeletePreset: (id: string) => void
   onAddMark: (start: number, end: number, kind: MarkKind, value: string) => void
+  onSetAlign: (value: string) => void
   onClearMarks: () => void
   onUploadCover: (file: File) => void
   onAddImage: (file: File) => void
@@ -340,6 +345,9 @@ function ManuscriptPanel(props: Props) {
   // selection before onChange fires — snapshot it on pointer down so the font
   // still lands on the range the user had highlighted.
   const fontSelectionRef = useRef<TextSelection | null>(null)
+  const currentAlign = hasRange
+    ? props.document.marks.find((mark) => mark.kind === "align" && mark.start <= selection!.start && mark.end >= selection!.end)?.value ?? "left"
+    : "left"
 
   return (
     <>
@@ -384,6 +392,25 @@ function ManuscriptPanel(props: Props) {
             </button>
             <button type="button" onClick={props.onClearMarks} title="수동 서식 지우기">
               <RotateCcw aria-hidden="true" />
+            </button>
+          </div>
+          <div
+            className="selection-toolbar"
+            aria-label="문단 정렬"
+            data-preserve-page-selection
+            onPointerDown={(event) => event.preventDefault()}
+          >
+            <button className={currentAlign === "left" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("left")} title="왼쪽 정렬">
+              <AlignLeft aria-hidden="true" />
+            </button>
+            <button className={currentAlign === "center" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("center")} title="가운데 정렬">
+              <AlignCenter aria-hidden="true" />
+            </button>
+            <button className={currentAlign === "right" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("right")} title="오른쪽 정렬">
+              <AlignRight aria-hidden="true" />
+            </button>
+            <button className={currentAlign === "justify" ? "is-active" : ""} type="button" onClick={() => props.onSetAlign("justify")} title="양쪽 정렬">
+              <AlignJustify aria-hidden="true" />
             </button>
           </div>
           <Field label="선택 글자 글꼴">

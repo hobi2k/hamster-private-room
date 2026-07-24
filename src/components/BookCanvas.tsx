@@ -222,6 +222,7 @@ function FlowTextSegment({
   start,
   end,
   isGap = false,
+  align,
   followingBlockIds,
   pendingCaret,
   onSelectPage,
@@ -235,6 +236,7 @@ function FlowTextSegment({
   start: number
   end: number
   isGap?: boolean
+  align?: CSSProperties["textAlign"]
   followingBlockIds: string[]
   pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
@@ -356,6 +358,7 @@ function FlowTextSegment({
     <div
       ref={editorRef}
       className={isGap ? "flow-text-segment is-gap" : "flow-text-segment"}
+      style={align ? { textAlign: align } : undefined}
       contentEditable="plaintext-only"
       suppressContentEditableWarning
       spellCheck={false}
@@ -797,27 +800,55 @@ function PageFlowEditor({
     ...document.speechBubbles.filter((bubble) => bubble.page > 0).map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: 0 })),
     ...document.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
   ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
+  // Paragraph alignment lives in "align" marks. A text run is split into
+  // sub-segments wherever the alignment changes, and each editable div gets its
+  // own text-align. The caret/offset model inside each segment is untouched, so
+  // this adds no risk to editing; with no align marks the output is identical to
+  // a single un-split run.
+  const alignMarks = document.marks.filter((mark) => mark.kind === "align")
+  const alignFor = (from: number, to: number) =>
+    alignMarks.find((mark) => mark.start <= from && mark.end >= to)?.value as CSSProperties["textAlign"] | undefined
   const nodes: ReactNode[] = []
   let cursor = page.start
 
+  const pushRun = (from: number, to: number, followingBlockIds: string[], keyId: string, isGap: boolean) => {
+    const bounds = new Set([from, to])
+    alignMarks.forEach((mark) => {
+      if (mark.start > from && mark.start < to) bounds.add(mark.start)
+      if (mark.end > from && mark.end < to) bounds.add(mark.end)
+    })
+    const points = [...bounds].sort((left, right) => left - right)
+    const pairs = points.length > 1 ? points.slice(0, -1).map((value, index) => [value, points[index + 1]] as const) : [[from, to] as const]
+    pairs.forEach(([segStart, segEnd], index) => {
+      nodes.push(
+        <FlowTextSegment
+          key={`text:${segStart}:${keyId}${index ? `:${index}` : ""}`}
+          document={document}
+          start={segStart}
+          end={segEnd}
+          isGap={isGap && index === 0}
+          align={alignFor(segStart, segEnd)}
+          followingBlockIds={followingBlockIds}
+          pendingCaret={pendingCaret}
+          onSelectPage={onSelectPage}
+          onChange={onChangePageText}
+          onCaretRestored={onCaretRestored}
+          onSelectText={onSelectText}
+          onInteractionStart={onInteractionStart}
+          onInteractionEnd={onInteractionEnd}
+        />,
+      )
+    })
+  }
+
   ordered.forEach((item, index) => {
     const anchor = Math.max(cursor, Math.min(page.end, item.anchor))
-    nodes.push(
-      <FlowTextSegment
-        key={`text:${cursor}:${item.id}`}
-        document={document}
-        start={cursor}
-        end={anchor}
-        isGap={index > 0}
-        followingBlockIds={globalOrder.slice(globalOrder.findIndex((block) => block.id === item.id)).map((block) => block.id)}
-        pendingCaret={pendingCaret}
-        onSelectPage={onSelectPage}
-        onChange={onChangePageText}
-        onCaretRestored={onCaretRestored}
-        onSelectText={onSelectText}
-        onInteractionStart={onInteractionStart}
-        onInteractionEnd={onInteractionEnd}
-      />,
+    pushRun(
+      cursor,
+      anchor,
+      globalOrder.slice(globalOrder.findIndex((block) => block.id === item.id)).map((block) => block.id),
+      item.id,
+      index > 0,
     )
     nodes.push(item.type === "bubble" ? (
       <SpeechBubbleItem
@@ -845,24 +876,15 @@ function PageFlowEditor({
     cursor = anchor
   })
 
-  nodes.push(
-    <FlowTextSegment
-      key={`text:${cursor}:end`}
-      document={document}
-      start={cursor}
-      end={page.end}
-      followingBlockIds={(ordered.length
-        ? globalOrder.slice(globalOrder.findIndex((item) => item.id === ordered.at(-1)?.id) + 1)
-        : globalOrder.filter((block) => block.anchor >= page.end)
-      ).map((item) => item.id)}
-      pendingCaret={pendingCaret}
-      onSelectPage={onSelectPage}
-      onChange={onChangePageText}
-      onCaretRestored={onCaretRestored}
-      onSelectText={onSelectText}
-      onInteractionStart={onInteractionStart}
-      onInteractionEnd={onInteractionEnd}
-    />,
+  pushRun(
+    cursor,
+    page.end,
+    (ordered.length
+      ? globalOrder.slice(globalOrder.findIndex((item) => item.id === ordered.at(-1)?.id) + 1)
+      : globalOrder.filter((block) => block.anchor >= page.end)
+    ).map((item) => item.id),
+    "end",
+    false,
   )
 
   return <div className="page-copy page-flow" title="본문 편집">{nodes}</div>
