@@ -420,6 +420,9 @@ function ManuscriptPanel(props: Props) {
               onPointerDown={() => { fontSelectionRef.current = props.textSelection }}
               onChange={(event) => {
                 const target = fontSelectionRef.current ?? props.textSelection
+                // Reset so a later keyboard-driven change (no pointerdown) uses
+                // the live selection instead of a stale captured range.
+                fontSelectionRef.current = null
                 if (!target || target.start === target.end) {
                   props.onNotify("페이지 본문에서 글꼴을 바꿀 글자를 먼저 선택해 주세요.")
                   return
@@ -641,8 +644,8 @@ function ImagePanel(props: Props) {
             <button className="primary-button" type="button" onClick={() => props.onPatchImage(fitImageToPage(image.aspectRatio ?? 1))}>
               <ImagePlus aria-hidden="true" /> 페이지 가득 채우기
             </button>
-            <RangeField label="가로 위치" min={-400} max={100} value={image.x} suffix="%" onChange={(x) => props.onPatchImage({ x })} />
-            <RangeField label="세로 위치" min={-300} max={100} value={image.y} suffix="%" onChange={(y) => props.onPatchImage({ y })} />
+            <RangeField label="가로 위치" min={-500} max={100} value={image.x} suffix="%" onChange={(x) => props.onPatchImage({ x })} />
+            <RangeField label="세로 위치" min={-500} max={100} value={image.y} suffix="%" onChange={(y) => props.onPatchImage({ y })} />
             <RangeField label="크기" min={8} max={500} value={image.width} suffix="%" onChange={(width) => props.onPatchImage({ width })} />
             <RangeField label="회전" min={-180} max={180} value={image.rotation} suffix="°" onChange={(rotation) => props.onPatchImage({ rotation })} />
             <RangeField label="투명도" min={0.05} max={1} step={0.05} value={image.opacity} onChange={(opacity) => props.onPatchImage({ opacity })} />

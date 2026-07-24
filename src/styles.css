@@ -1862,6 +1862,19 @@ kbd {
   cursor: text;
 }
 
+/* When a paragraph's alignment differs from its neighbour it renders as its own
+   block segment. The block boundary already provides the line break, so the
+   newline shared with the adjacent segment must NOT also render a <br>, or a
+   blank line appears between the two paragraphs. The <br> stays in the DOM
+   (offsets rely on it) — it is only hidden visually. */
+.flow-text-segment.no-lead-break > br:first-of-type {
+  display: none;
+}
+
+.flow-text-segment.no-trail-break > br:last-of-type {
+  display: none;
+}
+
 .flow-text-segment:focus {
   box-shadow: inset 0 -1px rgba(234, 165, 60, 0.5);
 }

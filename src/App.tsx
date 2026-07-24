@@ -68,6 +68,7 @@ function documentFlowBlocks(
   dividers: DividerBlock[],
   members: MemberProfile[],
   options: BookOptions,
+  measuredHeights: Record<string, number> = {},
 ) {
   const speechBlocks = bubbles
     .filter((bubble) => bubble.page > 0)
@@ -75,7 +76,10 @@ function documentFlowBlocks(
     .map((bubble) => ({
       id: bubble.id,
       anchor: bubble.anchor,
-      height: estimateSpeechBubbleHeight(
+      // Prefer the real rendered height (measured from the DOM) so pagination
+      // reserves exactly what a bubble occupies; fall back to the estimate for
+      // freshly-added bubbles that haven't been measured yet.
+      height: measuredHeights[bubble.id] ?? estimateSpeechBubbleHeight(
         bubble,
         members.find((member) => member.id === bubble.profileId),
         options,
@@ -136,7 +140,18 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
     ...parsed,
     body,
     options,
-    images: Array.isArray(parsed.images) ? parsed.images : [],
+    images: Array.isArray(parsed.images) ? parsed.images.map((image) => ({
+      ...image,
+      // Guard every numeric field so a malformed/legacy import can't feed NaN
+      // into controlled sliders or the layer transform.
+      x: Number.isFinite(image.x) ? image.x : 0,
+      y: Number.isFinite(image.y) ? image.y : 0,
+      width: Number.isFinite(image.width) && image.width > 0 ? image.width : 100,
+      rotation: Number.isFinite(image.rotation) ? image.rotation : 0,
+      opacity: Number.isFinite(image.opacity) ? image.opacity : 1,
+      zIndex: Number.isFinite(image.zIndex) ? image.zIndex : 1,
+      page: Number.isFinite(image.page) ? image.page : 1,
+    })) : [],
     members,
     speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
       ...bubble,
@@ -258,6 +273,13 @@ function removeBodyRanges(documentState: BookDocument, ranges: Array<{ start: nu
   const body = mergedRanges.reduceRight((text, range) => `${text.slice(0, range.start)}${text.slice(range.end)}`, documentState.body)
   const mapOffset = (offset: number) => offset - mergedRanges.reduce((removed, range) => removed + Math.max(0, Math.min(offset, range.end) - range.start), 0)
   const marks = documentState.marks.flatMap((mark) => {
+    // Alignment is a block property — keep it one contiguous mark (map endpoints,
+    // drop only if the whole paragraph was removed) rather than splitting it.
+    if (mark.kind === "align") {
+      const alignStart = mapOffset(mark.start)
+      const alignEnd = mapOffset(mark.end)
+      return alignEnd > alignStart ? [{ ...mark, start: alignStart, end: alignEnd }] : []
+    }
     const segments = mergedRanges.reduce<Array<{ start: number; end: number }>>((current, range) => current.flatMap((segment) => {
       if (range.end <= segment.start || range.start >= segment.end) return segment
       return [
@@ -304,6 +326,8 @@ export default function App() {
   const [toast, setToast] = useState<ToastState | null>(null)
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved")
   const [exporting, setExporting] = useState(false)
+  const [bubbleHeights, setBubbleHeights] = useState<Record<string, number>>({})
+  const bubbleHeightsRef = useRef(bubbleHeights)
   const past = useRef<BookDocument[]>([])
   const future = useRef<BookDocument[]>([])
   const transientStart = useRef<BookDocument | null>(null)
@@ -321,6 +345,27 @@ export default function App() {
     bookSlotsRef.current = bookSlots
   }, [bookSlots])
 
+  useEffect(() => {
+    bubbleHeightsRef.current = bubbleHeights
+  }, [bubbleHeights])
+
+  // BookCanvas measures each flow bubble's real rendered height and reports it
+  // here; we store only meaningful changes so pagination reserves the exact
+  // space a bubble occupies (fixing bubbles jumping to the next page too early).
+  const reportBubbleHeights = useCallback((measured: Record<string, number>) => {
+    setBubbleHeights((current) => {
+      let changed = false
+      const next = { ...current }
+      for (const [id, height] of Object.entries(measured)) {
+        if (Math.abs((current[id] ?? -1) - height) > 1.5) {
+          next[id] = height
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [])
+
   const notify = useCallback((message: string, tone: ToastState["tone"] = "default") => {
     setToast({ message, tone })
     window.setTimeout(() => setToast(null), 2600)
@@ -328,11 +373,21 @@ export default function App() {
   const clearPendingCaret = useCallback(() => setPendingCaret(null), [])
 
   const commit = useCallback((update: (current: BookDocument) => BookDocument) => {
-    setDocumentState((current) => {
-      past.current = [...past.current.slice(-79), current]
-      future.current = []
-      return { ...update(current), updatedAt: new Date().toISOString() }
-    })
+    // If a transient interaction (e.g. an in-flight text edit kept alive by the
+    // selection toolbar's preventDefault) is still open, record its pre-edit
+    // snapshot first so history stays in order rather than being scrambled by the
+    // later blur/endTransient.
+    if (transientStart.current) {
+      if (transientChanged.current) past.current = [...past.current.slice(-79), transientStart.current]
+      transientStart.current = null
+      transientChanged.current = false
+    }
+    // Push history BEFORE the state update — mutating refs inside the updater is
+    // impure and gets double-run under StrictMode/concurrent React, corrupting
+    // the undo stack. documentRef.current holds the current committed document.
+    past.current = [...past.current.slice(-79), documentRef.current]
+    future.current = []
+    setDocumentState((current) => ({ ...update(current), updatedAt: new Date().toISOString() }))
     refreshHistory()
   }, [])
 
@@ -415,13 +470,32 @@ export default function App() {
     return () => window.clearTimeout(timeout)
   }, [activeBookId, documentState, notify, persistBook, screen])
 
+  // The autosave above is debounced (420ms); flush synchronously on tab
+  // close/refresh/navigation so the last edits aren't lost before the timer fires.
+  useEffect(() => {
+    const flush = () => {
+      if (screen !== "editor" || !activeBookId) return
+      try {
+        persistBook(activeBookId, documentRef.current)
+      } catch {
+        // nothing more we can do during unload
+      }
+    }
+    window.addEventListener("pagehide", flush)
+    window.addEventListener("beforeunload", flush)
+    return () => {
+      window.removeEventListener("pagehide", flush)
+      window.removeEventListener("beforeunload", flush)
+    }
+  }, [screen, activeBookId, persistBook])
+
   useEffect(() => {
     localStorage.setItem(PRESET_KEY, JSON.stringify(customPresets))
   }, [customPresets])
 
   const flowBlocks = useMemo(
-    () => documentFlowBlocks(documentState.speechBubbles, documentState.dividers, documentState.members, documentState.options),
-    [documentState.dividers, documentState.members, documentState.options, documentState.speechBubbles],
+    () => documentFlowBlocks(documentState.speechBubbles, documentState.dividers, documentState.members, documentState.options, bubbleHeights),
+    [documentState.dividers, documentState.members, documentState.options, documentState.speechBubbles, bubbleHeights],
   )
   const pages = useMemo(() => paginateText(documentState.body, documentState.options, flowBlocks), [documentState.body, documentState.options, flowBlocks])
   const maxPage = pages.length
@@ -453,14 +527,23 @@ export default function App() {
       else groups.push([page])
       return groups
     }, [])
+    const body = documentState.body
     const ranges = runs.map((run) => {
       const first = pages[run[0] - 1]
       const last = pages[run.at(-1)! - 1]
       if (!first || !last) return null
       let start = first.start
       let end = last.end
-      if (documentState.body[end] === PAGE_BREAK) end += 1
-      else if (start > 0 && documentState.body[start - 1] === PAGE_BREAK) start -= 1
+      // Only drop a page break when the run is a WHOLE \f-delimited section
+      // (bounded by a break/edge on both sides). A run that is merely some pages
+      // of a longer auto-flowed section must keep the section's breaks — removing
+      // one would merge it with the neighbouring section.
+      const atSectionStart = start === 0 || body[start - 1] === PAGE_BREAK
+      const atSectionEnd = end === body.length || body[end] === PAGE_BREAK
+      if (atSectionStart && atSectionEnd) {
+        if (body[end] === PAGE_BREAK) end += 1
+        else if (start > 0 && body[start - 1] === PAGE_BREAK) start -= 1
+      }
       return { start, end }
     }).filter((range): range is { start: number; end: number } => range !== null)
     const removed = new Set(pageNumbers)
@@ -474,7 +557,7 @@ export default function App() {
       const dividers = current.dividers
         .filter((divider) => !removed.has(pageForBlock(divider.id, pages)))
         .map((divider) => ({ ...divider, anchor: text.mapOffset(divider.anchor) }))
-      const nextPages = paginateText(text.body, options, documentFlowBlocks(speechBubbles, dividers, current.members, options))
+      const nextPages = paginateText(text.body, options, documentFlowBlocks(speechBubbles, dividers, current.members, options, bubbleHeightsRef.current))
       return {
         ...current,
         body: text.body,
@@ -576,7 +659,16 @@ export default function App() {
   }, [commit, deleteSelectedPages, redo, selectedBubbleId, selectedDividerId, selectedImageId, selectedPages.length, undo])
 
   const patchOptions = (patch: Partial<BookOptions>) => {
-    commit((current) => ({ ...current, options: { ...current.options, ...patch } }))
+    commit((current) => {
+      // Hiding the cover stops page 0 from rendering — move its image layers to
+      // page 1 so they aren't orphaned and unrecoverable.
+      const hidingCover = patch.coverMode === "none" && current.options.coverMode !== "none"
+      return {
+        ...current,
+        options: { ...current.options, ...patch },
+        images: hidingCover ? current.images.map((image) => image.page === 0 ? { ...image, page: 1 } : image) : current.images,
+      }
+    })
   }
 
   const addPage = () => {
@@ -626,7 +718,7 @@ export default function App() {
           ? Math.max(0, divider.anchor + delta)
           : divider.anchor,
       }))
-      const nextPages = paginateText(body, current.options, documentFlowBlocks(speechBubbles, dividers, current.members, current.options))
+      const nextPages = paginateText(body, current.options, documentFlowBlocks(speechBubbles, dividers, current.members, current.options, bubbleHeightsRef.current))
       return {
         ...current,
         body,
@@ -636,6 +728,16 @@ export default function App() {
         }),
         dividers,
         marks: current.marks.flatMap((mark) => {
+          // Alignment is a paragraph (block) property, not an inline range — it
+          // must stay ONE contiguous mark, never be split, or the paragraph
+          // fragments into stacked divs.
+          if (mark.kind === "align") {
+            if (end <= mark.start) return { ...mark, start: mark.start + delta, end: mark.end + delta }
+            if (start >= mark.end) return mark
+            if (start <= mark.start && end >= mark.end) return []
+            const alignStart = Math.min(mark.start, start)
+            return { ...mark, start: alignStart, end: Math.max(alignStart + 1, mark.end + delta) }
+          }
           if (mark.end <= start) return mark
           if (mark.start >= end) return { ...mark, start: mark.start + delta, end: mark.end + delta }
           // A pure insertion inside a mark grows it; otherwise keep the mark's
@@ -857,7 +959,7 @@ export default function App() {
           ...(member ? { speakerName: member.name, bubbleColor: member.bubbleColor, textColor: member.textColor } : {}),
         }
       })
-      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.members, current.options))
+      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.members, current.options, bubbleHeightsRef.current))
       return {
         ...current,
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
@@ -874,7 +976,7 @@ export default function App() {
     commit((current) => {
       const speechBubbles = moveSpeechBubble(current.speechBubbles, id, direction)
       if (speechBubbles === current.speechBubbles) return current
-      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.members, current.options))
+      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.members, current.options, bubbleHeightsRef.current))
       return {
         ...current,
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
@@ -934,7 +1036,9 @@ export default function App() {
       // Snap to whole paragraphs (alignment is a block property): grow to the
       // start of the first line and the end of the last line the selection touches.
       const paraStart = current.body.lastIndexOf("\n", start - 1) + 1
-      const nextBreak = current.body.indexOf("\n", end)
+      // Search from end-1 so a selection that includes the trailing newline
+      // (e.g. a triple-click) doesn't skip to the FOLLOWING paragraph's break.
+      const nextBreak = current.body.indexOf("\n", Math.max(start, end - 1))
       const paraEnd = nextBreak === -1 ? current.body.length : nextBreak
       // Replace any align marks overlapping this paragraph range.
       const marks = current.marks.filter((mark) => mark.kind !== "align" || mark.end <= paraStart || mark.start >= paraEnd)
@@ -1180,6 +1284,7 @@ export default function App() {
       if (activeBookId) persistBook(activeBookId, documentState)
     } catch {
       setSaveStatus("error")
+      notify("저장 공간이 부족해 마지막 변경을 담지 못했어요. 작업 파일로 내보내 주세요.", "warn")
     }
     setMobilePanelOpen(false)
     setScreen("home")
@@ -1335,6 +1440,7 @@ export default function App() {
             onChangeBubble={(id, patch) => patchBubble(id, patch, true)}
             onMoveBubble={moveBubble}
             onDeleteBubble={deleteBubble}
+            onMeasureBubbles={reportBubbleHeights}
             onDeleteDivider={deleteDivider}
             onChangePageText={replacePageText}
             onCaretRestored={clearPendingCaret}

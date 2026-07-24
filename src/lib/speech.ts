@@ -88,7 +88,11 @@ export function estimateSpeechBubbleHeight(bubble: SpeechBubble, profile: Member
   const messageHeight = lineCount(bubble.text, messageSize) * messageSize * 1.35
   const secondaryHeight = bubble.secondaryText ? lineCount(bubble.secondaryText, secondarySize) * secondarySize * 1.35 + options.pageWidth * 0.012 : 0
   const cardHeight = Math.max(options.pageWidth * 0.1, options.pageWidth * 0.057 + nameHeight + messageHeight + secondaryHeight)
-  return (Math.max(cardHeight, hasAvatar ? options.pageWidth * 0.1 : 0) + options.pageWidth * 0.026) * 1.25
+  // This is only a FALLBACK for bubbles not yet measured from the DOM. The old
+  // blanket *1.25 over-reserved ~35% and pushed bubbles to the next page while
+  // space remained; use the accurate per-part sum plus a small safety margin
+  // (covers the card border and sub-pixel rounding) instead.
+  return Math.max(cardHeight, hasAvatar ? options.pageWidth * 0.1 : 0) + options.pageWidth * 0.02
 }
 
 function longestLineUnits(text: string) {

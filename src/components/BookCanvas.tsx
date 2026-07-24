@@ -27,6 +27,7 @@ type Props = {
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
+  onMeasureBubbles: (heights: Record<string, number>) => void
   onDeleteDivider: (id: string) => void
   onChangePageText: (
     start: number,
@@ -223,6 +224,8 @@ function FlowTextSegment({
   end,
   isGap = false,
   align,
+  suppressLeadBreak = false,
+  suppressTrailBreak = false,
   followingBlockIds,
   pendingCaret,
   onSelectPage,
@@ -237,6 +240,8 @@ function FlowTextSegment({
   end: number
   isGap?: boolean
   align?: CSSProperties["textAlign"]
+  suppressLeadBreak?: boolean
+  suppressTrailBreak?: boolean
   followingBlockIds: string[]
   pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
@@ -257,8 +262,23 @@ function FlowTextSegment({
 
   useLayoutEffect(() => {
     const editor = editorRef.current
-    if (!editor || (dirty.current && window.document.activeElement === editor) || editor.innerHTML === html) return
+    if (!editor || editor.innerHTML === html) return
+    const editingHere = dirty.current && window.document.activeElement === editor
+    if (editingHere) {
+      // Never clobber an active IME (Korean) composition.
+      if (composing.current) return
+      // Keep the user's live edits — UNLESS the text reflowed across the page
+      // boundary so this segment's DOM no longer matches its body range. Without
+      // this resync the reflowed tail renders duplicated on both pages.
+      if (editableElementText(editor) === document.body.slice(start, end)) return
+    }
     editor.innerHTML = html
+    if (editingHere) {
+      // Realign the edit trackers to the freshly-synced content; the pendingCaret
+      // effect (which runs right after this one) restores the caret.
+      lastText.current = document.body.slice(start, end)
+      editEnd.current = end
+    }
   }, [html])
 
   useLayoutEffect(() => {
@@ -357,7 +377,7 @@ function FlowTextSegment({
   return (
     <div
       ref={editorRef}
-      className={isGap ? "flow-text-segment is-gap" : "flow-text-segment"}
+      className={`flow-text-segment${isGap ? " is-gap" : ""}${suppressLeadBreak ? " no-lead-break" : ""}${suppressTrailBreak ? " no-trail-break" : ""}`}
       style={align ? { textAlign: align } : undefined}
       contentEditable="plaintext-only"
       suppressContentEditableWarning
@@ -805,17 +825,31 @@ function PageFlowEditor({
   // own text-align. The caret/offset model inside each segment is untouched, so
   // this adds no risk to editing; with no align marks the output is identical to
   // a single un-split run.
-  const alignMarks = document.marks.filter((mark) => mark.kind === "align")
+  // Snap each align mark to the WHOLE paragraph(s) it touches, so a mark whose
+  // range has drifted off the exact \n boundaries (after edits) still aligns
+  // complete lines instead of splitting a paragraph mid-line into stacked divs.
+  const paraStartOf = (pos: number) => document.body.lastIndexOf("\n", pos - 1) + 1
+  const paraEndOf = (pos: number) => {
+    const nl = document.body.indexOf("\n", pos)
+    return nl === -1 ? document.body.length : nl
+  }
+  const alignRegions = document.marks
+    .filter((mark) => mark.kind === "align")
+    .map((mark) => ({
+      start: paraStartOf(mark.start),
+      end: paraEndOf(Math.max(mark.start, mark.end - 1)),
+      value: mark.value as CSSProperties["textAlign"],
+    }))
   const alignFor = (from: number, to: number) =>
-    alignMarks.find((mark) => mark.start <= from && mark.end >= to)?.value as CSSProperties["textAlign"] | undefined
+    alignRegions.find((region) => region.start <= from && region.end >= to)?.value
   const nodes: ReactNode[] = []
   let cursor = page.start
 
   const pushRun = (from: number, to: number, followingBlockIds: string[], keyId: string, isGap: boolean) => {
     const bounds = new Set([from, to])
-    alignMarks.forEach((mark) => {
-      if (mark.start > from && mark.start < to) bounds.add(mark.start)
-      if (mark.end > from && mark.end < to) bounds.add(mark.end)
+    alignRegions.forEach((region) => {
+      if (region.start > from && region.start < to) bounds.add(region.start)
+      if (region.end > from && region.end < to) bounds.add(region.end)
     })
     const points = [...bounds].sort((left, right) => left - right)
     const pairs = points.length > 1 ? points.slice(0, -1).map((value, index) => [value, points[index + 1]] as const) : [[from, to] as const]
@@ -828,6 +862,8 @@ function PageFlowEditor({
           end={segEnd}
           isGap={isGap && index === 0}
           align={alignFor(segStart, segEnd)}
+          suppressLeadBreak={index > 0}
+          suppressTrailBreak={index < pairs.length - 1}
           followingBlockIds={followingBlockIds}
           pendingCaret={pendingCaret}
           onSelectPage={onSelectPage}
@@ -908,6 +944,7 @@ function DropPage({
   onChangeBubble,
   onMoveBubble,
   onDeleteBubble,
+  onMeasureBubbles,
   onInteractionStart,
   onInteractionEnd,
 }: {
@@ -928,6 +965,7 @@ function DropPage({
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
+  onMeasureBubbles: (heights: Record<string, number>) => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
 }) {
@@ -956,22 +994,44 @@ function DropPage({
     })
   }, [pageBubbles])
 
+  // Report each flow bubble's real occupied height (in page-width px) so
+  // pagination reserves exactly what it takes. Skip the selected bubble because
+  // selection can change its width/height and would cause a page reflow on
+  // select/deselect.
+  const measureFlowBubbles = useCallback(() => {
+    const pageElement = pageRef.current
+    if (!pageElement?.clientWidth) return
+    const measured: Record<string, number> = {}
+    pageElement.querySelectorAll<HTMLElement>("[data-flow-bubble]").forEach((element) => {
+      const id = element.dataset.flowBubble
+      if (!id || id === selectedBubbleId) return
+      const cs = window.getComputedStyle(element)
+      const occupied = element.getBoundingClientRect().height + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom)
+      measured[id] = (occupied / pageElement.clientWidth) * options.pageWidth
+    })
+    if (Object.keys(measured).length) onMeasureBubbles(measured)
+  }, [onMeasureBubbles, options.pageWidth, selectedBubbleId])
+
   useLayoutEffect(() => {
     const pageElement = pageRef.current
     if (!pageElement) return
-    measureSpeechBubbles()
-    const observer = new ResizeObserver(measureSpeechBubbles)
+    const measure = () => {
+      measureSpeechBubbles()
+      measureFlowBubbles()
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
     observer.observe(pageElement)
-    pageElement.querySelectorAll<HTMLElement>("[data-dialogue-layout-id]").forEach((element) => observer.observe(element))
+    pageElement.querySelectorAll<HTMLElement>("[data-dialogue-layout-id], [data-flow-bubble]").forEach((element) => observer.observe(element))
     let cancelled = false
     void window.document.fonts.ready.then(() => {
-      if (!cancelled) measureSpeechBubbles()
+      if (!cancelled) measure()
     })
     return () => {
       cancelled = true
       observer.disconnect()
     }
-  }, [document.members, measureSpeechBubbles, selectedBubbleId])
+  }, [document.members, measureFlowBubbles, measureSpeechBubbles, selectedBubbleId])
 
   const style = {
     "--page-width": `${options.pageWidth}px`,
@@ -1090,6 +1150,7 @@ export function BookCanvas(props: Props) {
           onChangeBubble={props.onChangeBubble}
           onMoveBubble={props.onMoveBubble}
           onDeleteBubble={props.onDeleteBubble}
+          onMeasureBubbles={props.onMeasureBubbles}
           onInteractionStart={props.onInteractionStart}
           onInteractionEnd={props.onInteractionEnd}
         >
@@ -1129,6 +1190,7 @@ export function BookCanvas(props: Props) {
             onChangeBubble={props.onChangeBubble}
             onMoveBubble={props.onMoveBubble}
             onDeleteBubble={props.onDeleteBubble}
+            onMeasureBubbles={props.onMeasureBubbles}
             onInteractionStart={props.onInteractionStart}
             onInteractionEnd={props.onInteractionEnd}
           >
