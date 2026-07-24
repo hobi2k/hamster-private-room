@@ -100,6 +100,7 @@ type TextStyle = {
   backgroundColor?: string
   fontStyle?: string
   fontWeight?: number
+  fontFamily?: string
 }
 
 export type DecoratedSlice = {
@@ -123,7 +124,9 @@ export function decoratePage(
           ? { color: mark.value }
           : mark.kind === "italic"
             ? { fontStyle: "italic" }
-            : { fontWeight: 700 },
+            : mark.kind === "font"
+              ? { fontFamily: mark.value }
+              : { fontWeight: 700 },
   }))
 
   const smartRanges: Array<{ start: number; end: number; style: TextStyle }> = []

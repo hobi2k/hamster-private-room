@@ -67,6 +67,7 @@ function decoratedTextHtml(document: BookDocument, start: number, end: number) {
       slice.style.backgroundColor ? `background-color:${escapeHtml(slice.style.backgroundColor)}` : "",
       slice.style.fontStyle ? `font-style:${escapeHtml(slice.style.fontStyle)}` : "",
       slice.style.fontWeight ? `font-weight:${slice.style.fontWeight}` : "",
+      slice.style.fontFamily ? `font-family:'${escapeHtml(slice.style.fontFamily.replace(/["'\\]/g, ""))}', 'Noto Serif KR', serif` : "",
     ].filter(Boolean).join(";")
     const bits = slice.text.split(/(\n\n|\n)/)
     return bits.map((bit) => bit === "\n\n"

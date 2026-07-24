@@ -1,7 +1,7 @@
 export type EditorTab = "manuscript" | "theme" | "image" | "dialogue" | "layout" | "footer" | "export"
 export type CoverMode = "image-text" | "image" | "text" | "none"
 export type ExportMode = "selected" | "single" | "spread"
-export type MarkKind = "highlight" | "color" | "italic" | "bold"
+export type MarkKind = "highlight" | "color" | "italic" | "bold" | "font"
 
 export type TextMark = {
   id: string

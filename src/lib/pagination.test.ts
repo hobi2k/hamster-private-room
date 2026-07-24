@@ -39,6 +39,16 @@ describe("decoratePage mark handling", () => {
     expect(highlighted?.style.backgroundColor).toBe("#ffdd55")
   })
 
+  it("applies a per-range font mark to only its range", () => {
+    const body = "가나다라마바사"
+    const marks: TextMark[] = [{ id: "f", start: 2, end: 5, kind: "font", value: "Pretendard" }]
+    const slices = decoratePage(body, page(body), marks, DEFAULT_OPTIONS)
+    const styled = slices.find((slice) => slice.text === "다라마")
+    const plain = slices.find((slice) => slice.text.startsWith("가나"))
+    expect(styled?.style.fontFamily).toBe("Pretendard")
+    expect(plain?.style.fontFamily).toBeUndefined()
+  })
+
   it("lets a user mark win over smart-quote styling without undefined clobbering", () => {
     const body = '"인용"'
     const marks: TextMark[] = [

@@ -917,7 +917,9 @@ export default function App() {
     commit((current) => {
       const same = current.marks.some((mark) => mark.start === range.start && mark.end === range.end && mark.kind === kind && mark.value === value)
       const marks = current.marks.filter((mark) => mark.start !== range.start || mark.end !== range.end || mark.kind !== kind)
-      if (same) return { ...current, marks }
+      // An empty value means "remove this kind from the range" (e.g. reset the
+      // selection back to the base font) — never store an empty mark.
+      if (same || !value) return { ...current, marks }
       return { ...current, marks: [...marks, { id: crypto.randomUUID(), ...range, kind, value }] }
     })
   }

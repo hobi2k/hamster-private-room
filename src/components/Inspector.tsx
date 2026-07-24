@@ -331,6 +331,16 @@ function ManuscriptPanel(props: Props) {
     return props.document.marks.some((mark) => mark.start === selection.start && mark.end === selection.end && mark.kind === kind && mark.value === value)
   }
 
+  const selection = props.textSelection
+  const hasRange = Boolean(selection && selection.start !== selection.end)
+  const selectionFont = hasRange
+    ? props.document.marks.find((mark) => mark.kind === "font" && mark.start === selection!.start && mark.end === selection!.end)?.value ?? ""
+    : ""
+  // Opening the native <select> blurs the editor, which can collapse the stored
+  // selection before onChange fires — snapshot it on pointer down so the font
+  // still lands on the range the user had highlighted.
+  const fontSelectionRef = useRef<TextSelection | null>(null)
+
   return (
     <>
       <PanelHeader title="원고와 표지" />
@@ -376,6 +386,24 @@ function ManuscriptPanel(props: Props) {
               <RotateCcw aria-hidden="true" />
             </button>
           </div>
+          <Field label="선택 글자 글꼴">
+            <select
+              value={selectionFont}
+              disabled={!hasRange}
+              onPointerDown={() => { fontSelectionRef.current = props.textSelection }}
+              onChange={(event) => {
+                const target = fontSelectionRef.current ?? props.textSelection
+                if (!target || target.start === target.end) {
+                  props.onNotify("페이지 본문에서 글꼴을 바꿀 글자를 먼저 선택해 주세요.")
+                  return
+                }
+                props.onAddMark(target.start, target.end, "font", event.target.value)
+              }}
+            >
+              <option value="">{hasRange ? "(기본 글꼴)" : "글자를 먼저 선택하세요"}</option>
+              {FONT_OPTIONS.map((font) => <option value={font} key={font}>{font}</option>)}
+            </select>
+          </Field>
         </Section>
 
         <Section title="보조색과 형광펜" open={false}>
