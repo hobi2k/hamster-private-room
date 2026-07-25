@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { TextMark } from "../types"
-import { adjacentDeletionRange, applyFontMark, diffRange, paragraphSelectionRange, segmentOwnsCaret } from "./text"
+import { adjacentDeletionRange, applyAlignmentMark, applyFontMark, diffRange, paragraphSelectionRange, segmentOwnsCaret } from "./text"
 
 describe("diffRange", () => {
   it("finds an insertion in the middle", () => {
@@ -106,6 +106,43 @@ describe("applyFontMark", () => {
       fontMark({ id: "new-1", start: 8 }),
       bold,
       fontMark({ id: "new-2", start: 5, end: 8, value: "New Font" }),
+    ])
+  })
+})
+
+describe("applyAlignmentMark", () => {
+  const alignment = (patch: Partial<TextMark> = {}): TextMark => ({
+    id: "align",
+    start: 0,
+    end: 30,
+    kind: "align",
+    value: "center",
+    ...patch,
+  })
+
+  it("changes only the selected paragraph inside a larger aligned range", () => {
+    let id = 0
+    expect(applyAlignmentMark([alignment()], 10, 20, "right", () => `new-${id += 1}`)).toEqual([
+      alignment({ end: 10 }),
+      alignment({ id: "new-1", start: 20 }),
+      alignment({ id: "new-2", start: 10, end: 20, value: "right" }),
+    ])
+  })
+
+  it("left alignment removes only the selected paragraph mark", () => {
+    expect(applyAlignmentMark([alignment()], 10, 20, "left", () => "right-piece")).toEqual([
+      alignment({ end: 10 }),
+      alignment({ id: "right-piece", start: 20 }),
+    ])
+  })
+
+  it("leaves unrelated text marks and paragraphs unchanged", () => {
+    const bold = alignment({ id: "bold", start: 2, end: 5, kind: "bold", value: "700" })
+    const other = alignment({ id: "other", start: 40, end: 50, value: "justify" })
+    expect(applyAlignmentMark([bold, other], 10, 20, "center", () => "new")).toEqual([
+      bold,
+      other,
+      alignment({ id: "new", start: 10, end: 20 }),
     ])
   })
 })

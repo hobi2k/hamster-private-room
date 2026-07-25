@@ -77,6 +77,31 @@ export function applyFontMark(
     : retained
 }
 
+export function applyAlignmentMark(
+  marks: TextMark[],
+  start: number,
+  end: number,
+  value: string,
+  createId: () => string = () => crypto.randomUUID(),
+) {
+  const retained = marks.flatMap((mark) => {
+    if (mark.kind !== "align" || mark.end <= start || mark.start >= end) return [mark]
+    const parts: TextMark[] = []
+    if (mark.start < start) parts.push({ ...mark, end: start })
+    if (mark.end > end) {
+      parts.push({
+        ...mark,
+        id: parts.length ? createId() : mark.id,
+        start: end,
+      })
+    }
+    return parts
+  })
+  return value === "left" || start >= end
+    ? retained
+    : [...retained, { id: createId(), start, end, kind: "align" as const, value }]
+}
+
 export function segmentOwnsCaret(start: number, end: number, bodyLength: number, offset: number) {
   if (offset < start || offset > end) return false
   if (offset === end) return end === bodyLength

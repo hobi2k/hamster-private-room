@@ -22,7 +22,7 @@ import {
 } from "./lib/library"
 import { PAGE_BREAK, paginateText } from "./lib/pagination"
 import { estimateSpeechBubbleHeight, moveSpeechBubble, pageForAnchor, pageForBlock } from "./lib/speech"
-import { applyFontMark, paragraphSelectionRange } from "./lib/text"
+import { applyAlignmentMark, applyFontMark, paragraphSelectionRange } from "./lib/text"
 import type {
   BookDocument,
   BookOptions,
@@ -386,6 +386,21 @@ export default function App() {
     window.setTimeout(() => setToast(null), 2600)
   }, [])
   const clearPendingCaret = useCallback(() => setPendingCaret(null), [])
+
+  useEffect(() => {
+    const clearStaleTextSelection = (event: Event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest("[data-flow-text-segment], [data-preserve-page-selection]")) return
+      setTextSelection(null)
+    }
+    window.document.addEventListener("pointerdown", clearStaleTextSelection, true)
+    window.document.addEventListener("focusin", clearStaleTextSelection, true)
+    return () => {
+      window.document.removeEventListener("pointerdown", clearStaleTextSelection, true)
+      window.document.removeEventListener("focusin", clearStaleTextSelection, true)
+    }
+  }, [])
 
   const commit = useCallback((update: (current: BookDocument) => BookDocument) => {
     // If a transient interaction (e.g. an in-flight text edit kept alive by the
@@ -1049,8 +1064,7 @@ export default function App() {
     })
   }
 
-  const setSelectionAlign = (value: string, savedSelection?: TextSelection | null) => {
-    const selection = savedSelection ?? textSelection
+  const setSelectionAlign = (value: string, selection: TextSelection | null) => {
     if (!selection || selection.start === selection.end) {
       notify("정렬할 문단의 글자를 먼저 선택해 주세요.", "warn")
       return
@@ -1058,11 +1072,7 @@ export default function App() {
     commit((current) => {
       // Single newlines are soft line breaks. Blank lines delimit paragraphs.
       const { start: paraStart, end: paraEnd } = paragraphSelectionRange(current.body, selection.start, selection.end)
-      // Replace any align marks overlapping this paragraph range.
-      const marks = current.marks.filter((mark) => mark.kind !== "align" || mark.end <= paraStart || mark.start >= paraEnd)
-      // "left" is the default — represented by the absence of a mark.
-      if (value === "left" || paraStart >= paraEnd) return { ...current, marks }
-      return { ...current, marks: [...marks, { id: crypto.randomUUID(), start: paraStart, end: paraEnd, kind: "align" as const, value }] }
+      return { ...current, marks: applyAlignmentMark(current.marks, paraStart, paraEnd, value) }
     })
   }
 
@@ -1410,7 +1420,13 @@ export default function App() {
       />
       <section className="workspace-shell">
         <header className="workspace-header">
-          <button className="mobile-menu icon-button" type="button" onClick={() => setMobilePanelOpen(true)} title="편집 도구 열기">
+          <button
+            className="mobile-menu icon-button"
+            type="button"
+            data-preserve-page-selection
+            onClick={() => setMobilePanelOpen(true)}
+            title="편집 도구 열기"
+          >
             <Menu aria-hidden="true" />
           </button>
           <button className="editor-home icon-button" type="button" onClick={returnHome} title="서재로 돌아가기">

@@ -31,6 +31,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, CSSProperties, PointerEvent, ReactNode } from "react"
 import { DEFAULT_OPTIONS, THEMES } from "../data/themes"
 import { avatarFrame, avatarStyle, clampAvatarCenter } from "../lib/avatar"
+import { readFlowTextSelection } from "../lib/domText"
 import { fitImageToPage } from "../lib/image"
 import type {
   BookDocument,
@@ -67,7 +68,7 @@ type Props = {
   onSavePreset: (name: string) => void
   onDeletePreset: (id: string) => void
   onAddMark: (start: number, end: number, kind: MarkKind, value: string) => void
-  onSetAlign: (value: string, selection?: TextSelection | null) => void
+  onSetAlign: (value: string, selection: TextSelection | null) => void
   onClearMarks: () => void
   onUploadCover: (file: File) => void
   onAddImage: (file: File) => void
@@ -323,10 +324,13 @@ function ManuscriptPanel(props: Props) {
   const options = props.document.options
   const [dividerStyle, setDividerStyle] = useState<DividerStyle>("diamond")
   const [dividerColor, setDividerColor] = useState(options.quoteColor)
-  const toolbarSelectionRef = useRef<TextSelection | null>(null)
+  const toolbarSelectionRef = useRef<TextSelection | null | undefined>(undefined)
+  const captureToolbarSelection = () => {
+    toolbarSelectionRef.current = readFlowTextSelection() ?? props.textSelection
+  }
   const takeToolbarSelection = () => {
-    const selection = toolbarSelectionRef.current ?? props.textSelection
-    toolbarSelectionRef.current = null
+    const selection = toolbarSelectionRef.current === undefined ? props.textSelection : toolbarSelectionRef.current
+    toolbarSelectionRef.current = undefined
     return selection
   }
   const addSelectionMark = (kind: MarkKind, value: string) => {
@@ -377,7 +381,7 @@ function ManuscriptPanel(props: Props) {
             aria-label="선택한 글자 꾸미기"
             data-preserve-page-selection
             onPointerDown={(event) => {
-              toolbarSelectionRef.current = props.textSelection
+              captureToolbarSelection()
               event.preventDefault()
             }}
           >
@@ -415,7 +419,7 @@ function ManuscriptPanel(props: Props) {
             aria-label="문단 정렬"
             data-preserve-page-selection
             onPointerDown={(event) => {
-              toolbarSelectionRef.current = props.textSelection
+              captureToolbarSelection()
               event.preventDefault()
             }}
           >
@@ -436,7 +440,8 @@ function ManuscriptPanel(props: Props) {
             <select
               value={selectionFont}
               disabled={!hasRange}
-              onPointerDown={() => { fontSelectionRef.current = props.textSelection }}
+              data-preserve-page-selection
+              onPointerDown={() => { fontSelectionRef.current = readFlowTextSelection() ?? props.textSelection }}
               onChange={(event) => {
                 const target = fontSelectionRef.current ?? props.textSelection
                 // Reset so a later keyboard-driven change (no pointerdown) uses

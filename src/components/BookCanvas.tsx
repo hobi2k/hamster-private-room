@@ -2,6 +2,7 @@ import { ArrowDown, ArrowLeftRight, ArrowUp, Check, RotateCw, Trash2 } from "luc
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
 import { avatarStyle } from "../lib/avatar"
+import { editableElementText, readFlowTextSelection, selectionTextLength } from "../lib/domText"
 import { decoratePage } from "../lib/pagination"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
 import { adjacentDeletionRange, diffRange, segmentOwnsCaret } from "../lib/text"
@@ -99,32 +100,6 @@ function decoratedTextHtml(document: BookDocument, start: number, end: number) {
   return document.body.slice(start, end).endsWith("\n")
     ? `${html.join("")}<span class="caret-anchor">&#8203;</span>`
     : html.join("")
-}
-
-function editableNodeText(current: Node): string {
-  if (current.nodeType === Node.TEXT_NODE) return current.nodeValue ?? ""
-  if (!(current instanceof Element)) return Array.from(current.childNodes).map(editableNodeText).join("")
-  if (current.classList.contains("caret-anchor")) {
-    return Array.from(current.childNodes).map(editableNodeText).join("").replaceAll("\u200b", "")
-  }
-  if (current.classList.contains("paragraph-gap")) return "\n\n"
-  if (current.tagName === "BR") return "\n"
-  const text = Array.from(current.childNodes).map(editableNodeText).join("")
-  return /^(DIV|P|LI)$/.test(current.tagName) ? `${text}\n` : text
-}
-
-function editableElementText(editor: HTMLElement) {
-  const text = Array.from(editor.childNodes).map(editableNodeText).join("").replaceAll("\u00a0", " ")
-  const lastChild = editor.lastChild
-  return lastChild instanceof Element && /^(DIV|P|LI)$/.test(lastChild.tagName) ? text.replace(/\n$/, "") : text
-}
-
-function selectionTextLength(editor: HTMLElement, node: Node, offset: number) {
-  const range = window.document.createRange()
-  range.selectNodeContents(editor)
-  range.setEnd(node, offset)
-  const fragment = range.cloneContents()
-  return editableNodeText(fragment).length
 }
 
 function caretTextLength(editor: HTMLElement) {
@@ -325,12 +300,8 @@ function FlowTextSegment({
 
   const updateSelection = () => {
     if (preserveKeyboardSelection.current) return
-    const editor = editorRef.current
-    const selection = window.getSelection()
-    if (!editor || !selection?.anchorNode || !selection.focusNode || !editor.contains(selection.anchorNode) || !editor.contains(selection.focusNode)) return
-    const anchor = start + selectionTextLength(editor, selection.anchorNode, selection.anchorOffset)
-    const focus = start + selectionTextLength(editor, selection.focusNode, selection.focusOffset)
-    onSelectText({ start: Math.min(anchor, focus), end: Math.max(anchor, focus) })
+    const selection = readFlowTextSelection()
+    if (selection) onSelectText(selection)
   }
 
   const applyEditorChange = (editor: HTMLDivElement) => {
@@ -440,6 +411,7 @@ function FlowTextSegment({
       onCut={applyCut}
       onSelect={updateSelection}
       onMouseUp={updateSelection}
+      onPointerUp={updateSelection}
       onKeyDown={(event) => {
         if (
           preserveKeyboardSelection.current

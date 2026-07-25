@@ -53,6 +53,7 @@ export function ToolRail({ active, canUndo, canRedo, onSelect, onUndo, onRedo }:
               className={active === tool.id ? "tool-button is-active" : "tool-button"}
               type="button"
               key={tool.id}
+              data-preserve-page-selection={tool.id === "manuscript" ? true : undefined}
               onClick={() => onSelect(tool.id)}
               aria-pressed={active === tool.id}
               title={tool.label}
