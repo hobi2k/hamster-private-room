@@ -2,7 +2,7 @@ import { ArrowDown, ArrowLeftRight, ArrowUp, Check, RotateCw, Trash2 } from "luc
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode, WheelEvent } from "react"
 import { avatarStyle } from "../lib/avatar"
-import { editableElementText, readFlowTextSelection, selectionTextLength } from "../lib/domText"
+import { editableElementText, readFlowTextSelection, restoreEditableSelection, selectionTextLength } from "../lib/domText"
 import { decoratePage } from "../lib/pagination"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
 import { adjacentDeletionRange, diffRange, segmentOwnsCaret } from "../lib/text"
@@ -274,14 +274,24 @@ function FlowTextSegment({
       // this resync the reflowed tail renders duplicated on both pages.
       if (editableElementText(editor) === document.body.slice(start, end)) return
     }
+    const nativeSelection = window.getSelection()
+    const localSelection = nativeSelection?.anchorNode
+      && nativeSelection.focusNode
+      && editor.contains(nativeSelection.anchorNode)
+      && editor.contains(nativeSelection.focusNode)
+      ? readFlowTextSelection(nativeSelection)
+      : null
     editor.innerHTML = html
+    if (localSelection) {
+      restoreEditableSelection(editor, localSelection.start - start, localSelection.end - start)
+    }
     if (editingHere) {
       // Realign the edit trackers to the freshly-synced content; the pendingCaret
       // effect (which runs right after this one) restores the caret.
       lastText.current = document.body.slice(start, end)
       editEnd.current = end
     }
-  }, [html])
+  }, [document.body, end, html, start])
 
   useLayoutEffect(() => {
     if (!dirty.current) editEnd.current = end

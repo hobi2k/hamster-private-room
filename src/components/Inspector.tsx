@@ -31,7 +31,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, CSSProperties, PointerEvent, ReactNode } from "react"
 import { DEFAULT_OPTIONS, THEMES } from "../data/themes"
 import { avatarFrame, avatarStyle, clampAvatarCenter } from "../lib/avatar"
-import { readFlowTextSelection } from "../lib/domText"
+import { resolveFlowTextSelection } from "../lib/domText"
 import { fitImageToPage } from "../lib/image"
 import type {
   BookDocument,
@@ -339,8 +339,7 @@ function ManuscriptPanel(props: Props) {
   const [highlightSelection, setHighlightSelection] = useState<TextSelection | null>(null)
   const toolbarSelectionRef = useRef<TextSelection | null | undefined>(undefined)
   const captureToolbarSelection = () => {
-    const live = readFlowTextSelection()
-    toolbarSelectionRef.current = live && live.start !== live.end ? live : props.textSelection
+    toolbarSelectionRef.current = resolveFlowTextSelection(props.document.body, props.textSelection)
   }
   const takeToolbarSelection = () => {
     const selection = toolbarSelectionRef.current === undefined ? props.textSelection : toolbarSelectionRef.current
@@ -497,8 +496,7 @@ function ManuscriptPanel(props: Props) {
               disabled={!hasRange}
               data-preserve-page-selection
               onPointerDown={() => {
-                const live = readFlowTextSelection()
-                fontSelectionRef.current = live && live.start !== live.end ? live : props.textSelection
+                fontSelectionRef.current = resolveFlowTextSelection(props.document.body, props.textSelection)
               }}
               onChange={(event) => {
                 const target = fontSelectionRef.current ?? props.textSelection

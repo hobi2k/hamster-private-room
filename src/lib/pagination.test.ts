@@ -49,6 +49,22 @@ describe("decoratePage mark handling", () => {
     expect(plain?.style.fontFamily).toBeUndefined()
   })
 
+  it("does not extend highlight or color into the sentence before the selected range", () => {
+    const body = "흐트러지지 않았다. 삼백 년이 넘는 세월이 빚어낸 표정의 완성도. 어떤\n거절에도 무너지지 않는 것."
+    const start = body.indexOf("삼백")
+    const marks: TextMark[] = [
+      { id: "highlight", start, end: body.length, kind: "highlight", value: "#f4ce5a66" },
+      { id: "color", start, end: body.length, kind: "color", value: "#b94f3c" },
+    ]
+    const slices = decoratePage(body, page(body), marks, DEFAULT_OPTIONS)
+
+    expect(slices[0]).toEqual({ text: "흐트러지지 않았다. ", style: {} })
+    expect(slices.slice(1).map((slice) => slice.text).join("")).toBe(body.slice(start))
+    expect(slices.slice(1).every((slice) => (
+      slice.style.backgroundColor === "#f4ce5a66" && slice.style.color === "#b94f3c"
+    ))).toBe(true)
+  })
+
   it("does not emit any inline style for an align mark (alignment is block-level)", () => {
     const body = "정렬 대상 문단"
     const marks: TextMark[] = [{ id: "al", start: 0, end: body.length, kind: "align", value: "center" }]
