@@ -18,7 +18,7 @@ import {
   saveBookSlots,
   upsertBookSlot,
 } from "./lib/library"
-import { PAGE_BREAK, paginateText } from "./lib/pagination"
+import { flowInsertionAnchor, PAGE_BREAK, paginateText } from "./lib/pagination"
 import { estimateSpeechBubbleHeight, moveSpeechBubble, pageForAnchor, pageForBlock } from "./lib/speech"
 import { applyAlignmentMark, applyFontMark, applyRangeMark, clearInlineMarksInRange, paragraphSelectionRange } from "./lib/text"
 import type {
@@ -894,9 +894,9 @@ export default function App() {
     }
     const targetPage = Math.max(1, selectedPage)
     const page = pages[targetPage - 1]
-    const anchor = textSelection && page && textSelection.start >= page.start && textSelection.start <= page.end
-      ? textSelection.start
-      : page?.end ?? documentRef.current.body.length
+    const anchor = page
+      ? flowInsertionAnchor(page, textSelection, targetPage === pages.length)
+      : documentRef.current.body.length
     const aspectRatio = await imageAspectRatio(src)
     const id = crypto.randomUUID()
     commit((current) => ({
@@ -1012,9 +1012,9 @@ export default function App() {
     commit((current) => {
       const count = current.speechBubbles.filter((bubble) => bubble.page === 0 ? selectedPage === 0 : selectedPage > 0).length
       const page = pages[Math.max(0, selectedPage - 1)]
-      const selectionAnchor = textSelection && page && textSelection.start >= page.start && textSelection.start <= page.end
-        ? textSelection.start
-        : page?.end ?? current.body.length
+      const selectionAnchor = page
+        ? flowInsertionAnchor(page, textSelection, selectedPage === pages.length)
+        : current.body.length
       return {
         ...current,
         speechBubbles: [
@@ -1053,9 +1053,9 @@ export default function App() {
   const addDivider = (style: DividerStyle, color: string) => {
     const id = crypto.randomUUID()
     const page = pages[Math.max(0, selectedPage - 1)]
-    const anchor = textSelection && page && textSelection.start >= page.start && textSelection.start <= page.end
-      ? textSelection.start
-      : page?.end ?? documentRef.current.body.length
+    const anchor = page
+      ? flowInsertionAnchor(page, textSelection, selectedPage === pages.length)
+      : documentRef.current.body.length
     commit((current) => ({
       ...current,
       dividers: [...current.dividers, {

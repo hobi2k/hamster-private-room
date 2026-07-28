@@ -138,8 +138,14 @@ export function clearInlineMarksInRange(
   })
 }
 
-export function segmentOwnsCaret(start: number, end: number, bodyLength: number, offset: number) {
+export function segmentOwnsCaret(
+  start: number,
+  end: number,
+  bodyLength: number,
+  offset: number,
+  ownsEndBoundary = false,
+) {
   if (offset < start || offset > end) return false
-  if (offset === end) return end === bodyLength
+  if (offset === end) return ownsEndBoundary || end === bodyLength
   return true
 }

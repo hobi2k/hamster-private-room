@@ -1,4 +1,4 @@
-import type { BookOptions, PageSlice, TextMark } from "../types"
+import type { BookOptions, PageSlice, TextMark, TextSelection } from "../types"
 
 const PAGE_RATIO = 1.414
 export const PAGE_BREAK = "\f"
@@ -7,6 +7,16 @@ export type FlowBlock = {
   id: string
   anchor: number
   height: number
+}
+
+export function flowInsertionAnchor(page: PageSlice, selection: TextSelection | null, isLastPage: boolean) {
+  const offset = selection?.start
+  if (
+    offset !== undefined
+    && offset >= page.start
+    && (offset < page.end || (isLastPage && offset <= page.end))
+  ) return offset
+  return page.start
 }
 
 export function paginateText(text: string, options: BookOptions, blocks: FlowBlock[] = []): PageSlice[] {

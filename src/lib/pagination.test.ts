@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { DEFAULT_OPTIONS } from "../data/themes"
 import type { TextMark } from "../types"
-import { decoratePage, PAGE_BREAK, paginateText } from "./pagination"
+import { decoratePage, flowInsertionAnchor, PAGE_BREAK, paginateText } from "./pagination"
 
 describe("paginateText", () => {
   it("keeps short text on a single page", () => {
@@ -25,6 +25,23 @@ describe("paginateText", () => {
     expect(pages.length).toBeGreaterThan(1)
     const joined = pages.map((page) => body.slice(page.start, page.end)).join("")
     expect(joined).toBe(body)
+  })
+})
+
+describe("flowInsertionAnchor", () => {
+  const page = { text: "둘째 페이지", start: 100, end: 160 }
+
+  it("uses a caret inside the selected page", () => {
+    expect(flowInsertionAnchor(page, { start: 124, end: 124 }, false)).toBe(124)
+  })
+
+  it("falls back inside the selected page instead of its next-page boundary", () => {
+    expect(flowInsertionAnchor(page, null, false)).toBe(100)
+    expect(flowInsertionAnchor(page, { start: 160, end: 160 }, false)).toBe(100)
+  })
+
+  it("keeps the document-end caret on the final page", () => {
+    expect(flowInsertionAnchor(page, { start: 160, end: 160 }, true)).toBe(160)
   })
 })
 

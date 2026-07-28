@@ -57,7 +57,13 @@ function editablePointAt(editor: HTMLElement, requestedOffset: number) {
       const virtualLength = child.classList.contains("paragraph-gap") ? 2 : child.tagName === "BR" ? 1 : 0
       if (virtualLength) {
         if (remaining === 0) return { node: parent, offset: index }
-        if (remaining <= virtualLength) return { node: parent, offset: index + 1 }
+        if (remaining <= virtualLength) {
+          const anchor = children[index + 1]
+          return {
+            node: parent,
+            offset: anchor instanceof Element && anchor.classList.contains("caret-anchor") ? index + 2 : index + 1,
+          }
+        }
         remaining -= virtualLength
         continue
       }

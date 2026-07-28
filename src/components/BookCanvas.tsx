@@ -134,38 +134,15 @@ function placeCaret(editor: HTMLElement, offset: number) {
       return
     }
     if (node.classList.contains("caret-anchor")) {
-      const textNodes = Array.from(node.childNodes).filter((child) => child.nodeType === Node.TEXT_NODE)
-      for (const textNode of textNodes) {
-        const raw = textNode.nodeValue ?? ""
-        const logicalLength = raw.replaceAll("\u200b", "").length
-        if (remaining <= logicalLength) {
-          let logicalOffset = 0
-          let rawOffset = raw.length
-          for (let index = 0; index < raw.length; index += 1) {
-            if (raw[index] === "\u200b") continue
-            if (logicalOffset === remaining) {
-              rawOffset = index
-              break
-            }
-            logicalOffset += 1
-          }
-          range.setStart(textNode, rawOffset)
-          placed = true
-          return
-        }
-        remaining -= logicalLength
-      }
       return
     }
     const virtualLength = node.classList.contains("paragraph-gap") ? 2 : node.tagName === "BR" ? 1 : 0
     if (virtualLength) {
       if (remaining <= virtualLength) {
-        const anchorText = node.nextSibling instanceof Element && node.nextSibling.classList.contains("caret-anchor")
-          ? node.nextSibling.firstChild
+        const anchor = node.nextSibling instanceof Element && node.nextSibling.classList.contains("caret-anchor")
+          ? node.nextSibling
           : null
-        if (anchorText?.nodeType === Node.TEXT_NODE) {
-          range.setStart(anchorText, Math.min(1, anchorText.nodeValue?.length ?? 0))
-        }
+        if (anchor) range.setStartAfter(anchor)
         else range.setStartAfter(node)
         placed = true
         return
@@ -212,13 +189,7 @@ function replaceSelectionWithText(editor: HTMLElement, text: string) {
   nodes.forEach((node) => fragment.append(node))
   range.insertNode(fragment)
   const lastNode = nodes.at(-1)!
-  const anchorText = lastNode instanceof Element && lastNode.classList.contains("caret-anchor")
-    ? lastNode.firstChild
-    : null
-  if (anchorText?.nodeType === Node.TEXT_NODE) {
-    range.setStart(anchorText, Math.min(1, anchorText.nodeValue?.length ?? 0))
-  }
-  else range.setStartAfter(lastNode)
+  range.setStartAfter(lastNode)
   range.collapse(true)
   selection?.removeAllRanges()
   selection?.addRange(range)
@@ -300,7 +271,7 @@ function FlowTextSegment({
   useLayoutEffect(() => {
     const editor = editorRef.current
     if (!editor || !pendingCaret || pendingCaret.beforeBlockId !== beforeBlockId) return
-    if (!segmentOwnsCaret(start, end, document.body.length, pendingCaret.offset)) return
+    if (!segmentOwnsCaret(start, end, document.body.length, pendingCaret.offset, beforeBlockId !== null)) return
     editor.focus({ preventScroll: true })
     placeCaret(editor, pendingCaret.offset - start)
     onSelectText({ start: pendingCaret.offset, end: pendingCaret.offset })

@@ -194,4 +194,9 @@ describe("segmentOwnsCaret", () => {
     expect(segmentOwnsCaret(10, 20, 20, 10)).toBe(true)
     expect(segmentOwnsCaret(10, 20, 20, 20)).toBe(true)
   })
+
+  it("keeps the caret in the segment immediately before a flow block", () => {
+    expect(segmentOwnsCaret(5, 10, 20, 10, true)).toBe(true)
+    expect(segmentOwnsCaret(10, 15, 20, 10)).toBe(true)
+  })
 })
