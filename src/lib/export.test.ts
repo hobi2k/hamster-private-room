@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { planSpreadExport, writeExportFile } from "./export"
+import { describe, expect, it, vi } from "vitest"
+import { clearExportSelection, planSpreadExport, writeExportFile } from "./export"
 import type { ExportDirectory } from "./export"
 
 describe("planSpreadExport", () => {
@@ -48,5 +48,17 @@ describe("writeExportFile", () => {
     expect(names).toEqual(["book-spread-0-1.png"])
     expect(writes).toEqual([png])
     expect(closed).toBe(true)
+  })
+})
+
+describe("clearExportSelection", () => {
+  it("removes editor focus and the native browser selection before a PNG capture", () => {
+    const blur = vi.fn()
+    const removeAllRanges = vi.fn()
+
+    clearExportSelection({ blur }, { removeAllRanges })
+
+    expect(blur).toHaveBeenCalledOnce()
+    expect(removeAllRanges).toHaveBeenCalledOnce()
   })
 })

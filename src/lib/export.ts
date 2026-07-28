@@ -33,7 +33,20 @@ export async function downloadExportFiles(files: ExportFile[]) {
   }
 }
 
+type ExportFocus = { blur: () => void }
+type ExportSelection = { removeAllRanges: () => void }
+
+export function clearExportSelection(
+  focused: ExportFocus | null = document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  selection: ExportSelection | null = window.getSelection(),
+) {
+  focused?.blur()
+  selection?.removeAllRanges()
+}
+
 async function capture(element: HTMLElement) {
+  clearExportSelection()
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
   return html2canvas(element, {
     backgroundColor: null,
     scale: Math.max(2, window.devicePixelRatio),
@@ -97,6 +110,7 @@ export async function copyBookPage(selectedPage: number) {
   }
   document.body.classList.add("is-exporting")
   try {
+    clearExportSelection()
     const blob = capture(selected).then(canvasToBlob)
     await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
   } finally {
@@ -110,6 +124,7 @@ export async function exportBook(mode: ExportMode, selectedPage: number, title: 
   document.body.classList.add("is-exporting")
   const safeTitle = title.trim().replace(/[\\/:*?"<>|]/g, "-") || "hamster-book"
   try {
+    clearExportSelection()
     if (mode === "selected") {
       const selected = findPage(selectedPage)
       if (!selected) return []

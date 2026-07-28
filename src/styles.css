@@ -2712,6 +2712,12 @@ kbd {
 .is-exporting .book-page {
   outline: 0 !important;
   box-shadow: none !important;
+  user-select: none !important;
+}
+
+.is-exporting .book-page *::selection {
+  color: inherit !important;
+  background: transparent !important;
 }
 
 .is-exporting .image-layer.is-selected::after,

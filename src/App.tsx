@@ -1340,8 +1340,6 @@ export default function App() {
     setExporting(true)
     notify("선택한 페이지를 복사하고 있어요.")
     try {
-      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
       await copyBookPage(selectedPage)
       notify("페이지를 이미지로 복사했어요. 업로드 창에 붙여넣어 보세요.", "success")
     } catch {
