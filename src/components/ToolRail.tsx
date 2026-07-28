@@ -1,12 +1,12 @@
 import {
   BookOpenText,
+  BookMarked,
   Download,
   ImagePlus,
   LayoutTemplate,
   MessageCircleMore,
   Palette,
   Redo2,
-  TextQuote,
   Undo2,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -14,11 +14,11 @@ import type { EditorTab } from "../types"
 
 const TOOLS: Array<{ id: EditorTab; label: string; icon: LucideIcon }> = [
   { id: "manuscript", label: "원고", icon: BookOpenText },
+  { id: "book", label: "책 정보", icon: BookMarked },
   { id: "theme", label: "테마", icon: Palette },
   { id: "image", label: "이미지", icon: ImagePlus },
   { id: "dialogue", label: "말풍선", icon: MessageCircleMore },
   { id: "layout", label: "지면", icon: LayoutTemplate },
-  { id: "footer", label: "꼬리말", icon: TextQuote },
   { id: "export", label: "내보내기", icon: Download },
 ]
 

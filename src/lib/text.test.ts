@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { TextMark } from "../types"
-import { adjacentDeletionRange, applyAlignmentMark, applyFontMark, diffRange, paragraphSelectionRange, segmentOwnsCaret } from "./text"
+import { adjacentDeletionRange, applyAlignmentMark, applyFontMark, applyRangeMark, clearInlineMarksInRange, diffRange, paragraphSelectionRange, segmentOwnsCaret } from "./text"
 
 describe("diffRange", () => {
   it("finds an insertion in the middle", () => {
@@ -143,6 +143,43 @@ describe("applyAlignmentMark", () => {
       bold,
       other,
       alignment({ id: "new", start: 10, end: 20 }),
+    ])
+  })
+
+  it("stores left alignment when the document default is justify", () => {
+    expect(applyAlignmentMark([], 0, 20, "left", () => "left", "justify")).toEqual([
+      alignment({ id: "left", end: 20, value: "left" }),
+    ])
+    expect(applyAlignmentMark([alignment({ value: "left" })], 0, 30, "justify", () => "unused", "justify")).toEqual([])
+  })
+})
+
+describe("selected text effects", () => {
+  const mark = (patch: Partial<TextMark> = {}): TextMark => ({
+    id: "highlight",
+    start: 2,
+    end: 12,
+    kind: "highlight",
+    value: "#ffcc5566",
+    ...patch,
+  })
+
+  it("replaces a live highlight color without touching its neighbours", () => {
+    let id = 0
+    expect(applyRangeMark([mark()], 5, 8, "highlight", "#00cc9977", () => `part-${id += 1}`)).toEqual([
+      mark({ end: 5 }),
+      mark({ id: "part-1", start: 8 }),
+      mark({ id: "part-2", start: 5, end: 8, value: "#00cc9977" }),
+    ])
+  })
+
+  it("clears only inline effects inside the selection and preserves alignment", () => {
+    const align = mark({ id: "align", start: 0, end: 20, kind: "align", value: "right" })
+    let id = 0
+    expect(clearInlineMarksInRange([mark(), align], 5, 8, () => `part-${id += 1}`)).toEqual([
+      mark({ end: 5 }),
+      mark({ id: "part-1", start: 8 }),
+      align,
     ])
   })
 })

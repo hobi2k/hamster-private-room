@@ -1,14 +1,12 @@
 import { Check, House, Menu, MousePointer2, Plus, Save, Trash2, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { BookCanvas } from "./components/BookCanvas"
-import { ExportTray } from "./components/ExportTray"
 import { HamsterMascot } from "./components/HamsterMascot"
 import { HomeScreen } from "./components/HomeScreen"
 import { Inspector } from "./components/Inspector"
 import { ToolRail } from "./components/ToolRail"
 import { DEFAULT_OPTIONS } from "./data/themes"
-import { copyBookPage, downloadExportFile, exportBook, saveExportFilesToDirectory, supportsDirectoryExport } from "./lib/export"
-import type { ExportFile } from "./lib/export"
+import { copyBookPage, downloadExportFiles, exportBook } from "./lib/export"
 import { fitImageToPage } from "./lib/image"
 import {
   ACTIVE_BOOK_KEY,
@@ -22,7 +20,7 @@ import {
 } from "./lib/library"
 import { PAGE_BREAK, paginateText } from "./lib/pagination"
 import { estimateSpeechBubbleHeight, moveSpeechBubble, pageForAnchor, pageForBlock } from "./lib/speech"
-import { applyAlignmentMark, applyFontMark, paragraphSelectionRange } from "./lib/text"
+import { applyAlignmentMark, applyFontMark, applyRangeMark, clearInlineMarksInRange, paragraphSelectionRange } from "./lib/text"
 import type {
   BookDocument,
   BookOptions,
@@ -33,6 +31,7 @@ import type {
   ExportMode,
   FooterNote,
   ImageLayer,
+  InlineImageBlock,
   MarkKind,
   MemberProfile,
   SpeechBubble,
@@ -60,6 +59,7 @@ function createDocument(): BookDocument {
     members: [],
     speechBubbles: [],
     dividers: [],
+    inlineImages: [],
     marks: [],
     footers: {},
     updatedAt: new Date().toISOString(),
@@ -69,6 +69,7 @@ function createDocument(): BookDocument {
 function documentFlowBlocks(
   bubbles: SpeechBubble[],
   dividers: DividerBlock[],
+  inlineImages: InlineImageBlock[],
   members: MemberProfile[],
   options: BookOptions,
   measuredHeights: Record<string, number> = {},
@@ -96,7 +97,15 @@ function documentFlowBlocks(
     rank: 1,
     height: options.pageWidth * 0.09,
   }))
-  return [...speechBlocks, ...dividerBlocks]
+  const contentWidth = Math.max(120, options.pageWidth - options.paddingX * 2)
+  const imageBlocks = inlineImages.map((image) => ({
+    id: image.id,
+    anchor: image.anchor,
+    order: image.order,
+    rank: 2,
+    height: (contentWidth * (image.width / 100)) / Math.max(0.1, image.aspectRatio) + options.fontSize * 1.5,
+  }))
+  return [...speechBlocks, ...dividerBlocks, ...imageBlocks]
     .sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
     .map(({ id, anchor, height }) => ({ id, anchor, height }))
 }
@@ -147,7 +156,18 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
     anchor: Math.max(0, Math.min(body.length, Number.isFinite(divider.anchor) ? divider.anchor : body.length)),
     order: Number.isFinite(divider.order) ? divider.order : index + 1,
   })) : []
-  const pages = paginateText(body, options, documentFlowBlocks(speechBubbles, dividers, members, options))
+  const inlineImages = Array.isArray(parsed.inlineImages) ? parsed.inlineImages.map((image, index) => ({
+    ...image,
+    anchor: Math.max(0, Math.min(body.length, Number.isFinite(image.anchor) ? image.anchor : body.length)),
+    width: Math.max(24, Math.min(100, Number.isFinite(image.width) ? image.width : 92)),
+    aspectRatio: Math.max(0.1, Number.isFinite(image.aspectRatio) ? image.aspectRatio : 1.6),
+    scale: Math.max(100, Math.min(400, Number.isFinite(image.scale) ? image.scale : 100)),
+    x: Math.max(0, Math.min(100, Number.isFinite(image.x) ? image.x : 50)),
+    y: Math.max(0, Math.min(100, Number.isFinite(image.y) ? image.y : 50)),
+    align: image.align === "left" || image.align === "right" ? image.align : "center" as const,
+    order: Number.isFinite(image.order) ? image.order : index + 1,
+  })) : []
+  const pages = paginateText(body, options, documentFlowBlocks(speechBubbles, dividers, inlineImages, members, options))
   const normalized = {
     ...createDocument(),
     ...parsed,
@@ -171,8 +191,13 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
       page: pageForBlock(bubble.id, pages) || pageForAnchor(bubble.anchor, pages),
     }),
     dividers,
+    inlineImages,
     marks,
-    footers: parsed.footers ?? {},
+    footers: Object.fromEntries(Object.entries(parsed.footers ?? {}).map(([page, footer]) => [page, {
+      ...footer,
+      titleFont: footer.titleFont ?? options.fontFamily,
+      subtitleFont: footer.subtitleFont ?? options.fontFamily,
+    }])),
   }
   delete (normalized as BookDocument & { dialogueTexts?: unknown }).dialogueTexts
   return normalized
@@ -331,6 +356,7 @@ export default function App() {
   const [selectedImageId, setSelectedImageId] = useState("")
   const [selectedBubbleId, setSelectedBubbleId] = useState("")
   const [selectedDividerId, setSelectedDividerId] = useState("")
+  const [selectedInlineImageId, setSelectedInlineImageId] = useState("")
   const [textSelection, setTextSelection] = useState<TextSelection | null>(null)
   const [pendingCaret, setPendingCaret] = useState<{ offset: number; beforeBlockId: string | null } | null>(null)
   const [transformMode, setTransformMode] = useState(true)
@@ -339,8 +365,6 @@ export default function App() {
   const [toast, setToast] = useState<ToastState | null>(null)
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved")
   const [exporting, setExporting] = useState(false)
-  const [exportFiles, setExportFiles] = useState<ExportFile[]>([])
-  const [savingExportFiles, setSavingExportFiles] = useState(false)
   const [bubbleHeights, setBubbleHeights] = useState<Record<string, number>>({})
   const bubbleHeightsRef = useRef(bubbleHeights)
   const past = useRef<BookDocument[]>([])
@@ -524,14 +548,15 @@ export default function App() {
   }, [customPresets])
 
   const flowBlocks = useMemo(
-    () => documentFlowBlocks(documentState.speechBubbles, documentState.dividers, documentState.members, documentState.options, bubbleHeights),
-    [documentState.dividers, documentState.members, documentState.options, documentState.speechBubbles, bubbleHeights],
+    () => documentFlowBlocks(documentState.speechBubbles, documentState.dividers, documentState.inlineImages, documentState.members, documentState.options, bubbleHeights),
+    [documentState.dividers, documentState.inlineImages, documentState.members, documentState.options, documentState.speechBubbles, bubbleHeights],
   )
   const pages = useMemo(() => paginateText(documentState.body, documentState.options, flowBlocks), [documentState.body, documentState.options, flowBlocks])
   const maxPage = pages.length
   const selectedImage = documentState.images.find((image) => image.id === selectedImageId) ?? null
   const selectedBubble = documentState.speechBubbles.find((bubble) => bubble.id === selectedBubbleId) ?? null
   const selectedDivider = documentState.dividers.find((divider) => divider.id === selectedDividerId) ?? null
+  const selectedInlineImage = documentState.inlineImages.find((image) => image.id === selectedInlineImageId) ?? null
 
   useEffect(() => {
     const fallback = selectedPage > maxPage || (selectedPage === 0 && documentState.options.coverMode === "none") ? Math.max(1, maxPage) : selectedPage
@@ -587,7 +612,10 @@ export default function App() {
       const dividers = current.dividers
         .filter((divider) => !removed.has(pageForBlock(divider.id, pages)))
         .map((divider) => ({ ...divider, anchor: text.mapOffset(divider.anchor) }))
-      const nextPages = paginateText(text.body, options, documentFlowBlocks(speechBubbles, dividers, current.members, options, bubbleHeightsRef.current))
+      const inlineImages = current.inlineImages
+        .filter((image) => !removed.has(pageForBlock(image.id, pages)))
+        .map((image) => ({ ...image, anchor: text.mapOffset(image.anchor) }))
+      const nextPages = paginateText(text.body, options, documentFlowBlocks(speechBubbles, dividers, inlineImages, current.members, options, bubbleHeightsRef.current))
       return {
         ...current,
         body: text.body,
@@ -599,6 +627,7 @@ export default function App() {
           page: pageForBlock(bubble.id, nextPages) || pageForAnchor(bubble.anchor, nextPages),
         }),
         dividers,
+        inlineImages,
         footers: Object.fromEntries(Object.entries(current.footers)
           .filter(([page]) => !removed.has(Number(page)))
           .map(([page, footer]) => [remapPage(Number(page)), footer])),
@@ -610,6 +639,7 @@ export default function App() {
     setSelectedImageId("")
     setSelectedBubbleId("")
     setSelectedDividerId("")
+    setSelectedInlineImageId("")
     setTextSelection(null)
     const message = pageNumbers.length > 1
       ? `${pageNumbers.length}개 페이지를 지웠어요.`
@@ -682,11 +712,17 @@ export default function App() {
         event.preventDefault()
         commit((current) => ({ ...current, dividers: current.dividers.filter((divider) => divider.id !== selectedDividerId) }))
         setSelectedDividerId("")
+        return
+      }
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedInlineImageId && !target.closest("input, textarea, [contenteditable]")) {
+        event.preventDefault()
+        commit((current) => ({ ...current, inlineImages: current.inlineImages.filter((image) => image.id !== selectedInlineImageId) }))
+        setSelectedInlineImageId("")
       }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [commit, deleteSelectedPages, redo, selectedBubbleId, selectedDividerId, selectedImageId, selectedPages.length, undo])
+  }, [commit, deleteSelectedPages, redo, selectedBubbleId, selectedDividerId, selectedImageId, selectedInlineImageId, selectedPages.length, undo])
 
   const patchOptions = (patch: Partial<BookOptions>, transient = false) => {
     const update = (current: BookDocument) => {
@@ -711,6 +747,7 @@ export default function App() {
     setSelectedImageId("")
     setSelectedBubbleId("")
     setSelectedDividerId("")
+    setSelectedInlineImageId("")
     setTextSelection(null)
     notify(`${nextPage}쪽을 추가했어요.`, "success")
     window.requestAnimationFrame(() => {
@@ -753,7 +790,13 @@ export default function App() {
           ? Math.max(0, divider.anchor + delta)
           : divider.anchor,
       }))
-      const nextPages = paginateText(body, current.options, documentFlowBlocks(speechBubbles, dividers, current.members, current.options, bubbleHeightsRef.current))
+      const inlineImages = current.inlineImages.map((image) => ({
+        ...image,
+        anchor: image.anchor > end || (image.anchor === end && following.has(image.id))
+          ? Math.max(0, image.anchor + delta)
+          : image.anchor,
+      }))
+      const nextPages = paginateText(body, current.options, documentFlowBlocks(speechBubbles, dividers, inlineImages, current.members, current.options, bubbleHeightsRef.current))
       return {
         ...current,
         body,
@@ -762,6 +805,7 @@ export default function App() {
           page: pageForBlock(bubble.id, nextPages) || pageForAnchor(bubble.anchor, nextPages),
         }),
         dividers,
+        inlineImages,
         marks: current.marks.flatMap((mark) => {
           // Alignment is a paragraph (block) property, not an inline range — it
           // must stay ONE contiguous mark, never be split, or the paragraph
@@ -821,6 +865,7 @@ export default function App() {
     setSelectedImageId(id)
     setSelectedBubbleId("")
     setSelectedDividerId("")
+    setSelectedInlineImageId("")
     setActiveTab("image")
     notify("사진을 페이지에 콕 놓았어요.", "success")
   }
@@ -839,6 +884,61 @@ export default function App() {
     commit((current) => ({ ...current, images: current.images.filter((image) => image.id !== id) }))
     setSelectedImageId("")
     notify("이미지를 지웠어요.")
+  }
+
+  const addInlineImage = async (file: File) => {
+    const src = await imageFileToDataUrl(file)
+    if (!src) {
+      notify("이미지를 읽지 못했어요.", "warn")
+      return
+    }
+    const targetPage = Math.max(1, selectedPage)
+    const page = pages[targetPage - 1]
+    const anchor = textSelection && page && textSelection.start >= page.start && textSelection.start <= page.end
+      ? textSelection.start
+      : page?.end ?? documentRef.current.body.length
+    const aspectRatio = await imageAspectRatio(src)
+    const id = crypto.randomUUID()
+    commit((current) => ({
+      ...current,
+      inlineImages: [...current.inlineImages, {
+        id,
+        anchor,
+        src,
+        name: file.name,
+        width: 92,
+        aspectRatio,
+        scale: 100,
+        x: 50,
+        y: 50,
+        align: "center",
+        order: Math.max(0, ...current.inlineImages.map((image) => image.order)) + 1,
+      }],
+    }))
+    setSelectedInlineImageId(id)
+    setSelectedPage(targetPage)
+    setSelectedPages([targetPage])
+    setSelectedImageId("")
+    setSelectedBubbleId("")
+    setSelectedDividerId("")
+    setActiveTab("manuscript")
+    notify("본문에 이미지를 넣었어요.", "success")
+  }
+
+  const patchInlineImage = (id: string, patch: Partial<InlineImageBlock>, transient = false) => {
+    const update = (current: BookDocument) => ({
+      ...current,
+      inlineImages: current.inlineImages.map((image) => image.id === id ? { ...image, ...patch } : image),
+    })
+    if (transient) updateTransient(update)
+    else commit(update)
+  }
+
+  const deleteInlineImage = (id = selectedInlineImageId) => {
+    if (!id) return
+    commit((current) => ({ ...current, inlineImages: current.inlineImages.filter((image) => image.id !== id) }))
+    setSelectedInlineImageId("")
+    notify("본문 이미지를 지웠어요.")
   }
 
   const addMember = () => {
@@ -945,6 +1045,7 @@ export default function App() {
     setSelectedImageId("")
     setSelectedBubbleId(id)
     setSelectedDividerId("")
+    setSelectedInlineImageId("")
     setActiveTab("dialogue")
     notify("말풍선을 현재 페이지에 놓았어요.", "success")
   }
@@ -968,6 +1069,7 @@ export default function App() {
     setSelectedDividerId(id)
     setSelectedBubbleId("")
     setSelectedImageId("")
+    setSelectedInlineImageId("")
     notify("구분선을 커서 위치에 넣었어요.", "success")
   }
 
@@ -996,7 +1098,7 @@ export default function App() {
           ...(member ? { speakerName: member.name, bubbleColor: member.bubbleColor, textColor: member.textColor } : {}),
         }
       })
-      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.members, current.options, bubbleHeightsRef.current))
+      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.inlineImages, current.members, current.options, bubbleHeightsRef.current))
       return {
         ...current,
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
@@ -1013,7 +1115,7 @@ export default function App() {
     commit((current) => {
       const speechBubbles = moveSpeechBubble(current.speechBubbles, current.dividers, id, direction)
       if (speechBubbles === current.speechBubbles) return current
-      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.members, current.options, bubbleHeightsRef.current))
+      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.inlineImages, current.members, current.options, bubbleHeightsRef.current))
       return {
         ...current,
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
@@ -1041,6 +1143,7 @@ export default function App() {
     const globalOrder = [
       ...current.speechBubbles.filter((item) => item.page > 0).map((item) => ({ id: item.id, anchor: item.anchor, order: item.zIndex, rank: item.flowRank ?? 0 })),
       ...current.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
+      ...current.inlineImages.map((image) => ({ id: image.id, anchor: image.anchor, order: image.order, rank: 2 })),
     ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
     const next = globalOrder[globalOrder.findIndex((item) => item.id === id) + 1] ?? null
     setPendingCaret({ offset: bubble.anchor, beforeBlockId: next ? next.id : null })
@@ -1064,6 +1167,27 @@ export default function App() {
     })
   }
 
+  const setMark = (start: number, end: number, kind: MarkKind, value: string, transient = false) => {
+    const range = { start: Math.min(start, end), end: Math.max(start, end) }
+    if (range.start === range.end) return
+    const update = (current: BookDocument) => ({
+      ...current,
+      marks: applyRangeMark(current.marks, range.start, range.end, kind, value),
+    })
+    if (transient) updateTransient(update)
+    else commit(update)
+  }
+
+  const clearSelectionMarks = (selection: TextSelection | null) => {
+    if (!selection || selection.start === selection.end) {
+      notify("효과를 지울 글자를 먼저 선택해 주세요.", "warn")
+      return
+    }
+    const start = Math.min(selection.start, selection.end)
+    const end = Math.max(selection.start, selection.end)
+    commit((current) => ({ ...current, marks: clearInlineMarksInRange(current.marks, start, end) }))
+  }
+
   const setSelectionAlign = (value: string, selection: TextSelection | null) => {
     if (!selection || selection.start === selection.end) {
       notify("정렬할 문단의 글자를 먼저 선택해 주세요.", "warn")
@@ -1072,13 +1196,15 @@ export default function App() {
     commit((current) => {
       // Single newlines are soft line breaks. Blank lines delimit paragraphs.
       const { start: paraStart, end: paraEnd } = paragraphSelectionRange(current.body, selection.start, selection.end)
-      return { ...current, marks: applyAlignmentMark(current.marks, paraStart, paraEnd, value) }
+      return { ...current, marks: applyAlignmentMark(current.marks, paraStart, paraEnd, value, undefined, current.options.defaultTextAlign) }
     })
   }
 
   const currentFooter = documentState.footers[selectedPage] ?? {
     title: documentState.title,
     subtitle: "",
+    titleFont: documentState.options.fontFamily,
+    subtitleFont: documentState.options.fontFamily,
     color: documentState.options.textColor,
     italic: false,
     weight: 400,
@@ -1153,6 +1279,7 @@ export default function App() {
     setSelectedImageId("")
     setSelectedBubbleId("")
     setSelectedDividerId("")
+    setSelectedInlineImageId("")
     setTextSelection(null)
     setActiveTab("manuscript")
     setMobilePanelOpen(false)
@@ -1200,31 +1327,12 @@ export default function App() {
         notify("내보낼 페이지가 없어요.", "warn")
         return
       }
-      if (files.length === 1) {
-        downloadExportFile(files[0])
-        notify("PNG 이미지 저장을 시작했어요.", "success")
-        return
-      }
-      setExportFiles(files)
-      notify(`${files.length}개 PNG 파일을 준비했어요.`, "success")
+      await downloadExportFiles(files)
+      notify(files.length === 1 ? "PNG 이미지 저장을 시작했어요." : `${files.length}개 PNG를 다운로드 폴더에 저장하기 시작했어요.`, "success")
     } catch {
       notify("이미지를 저장하지 못했어요. 외부 이미지나 글꼴을 확인해 주세요.", "warn")
     } finally {
       setExporting(false)
-    }
-  }
-
-  const savePreparedExports = async () => {
-    setSavingExportFiles(true)
-    try {
-      const saved = await saveExportFilesToDirectory(exportFiles)
-      if (!saved) return
-      setExportFiles([])
-      notify(`${exportFiles.length}개 PNG 파일을 폴더에 저장했어요.`, "success")
-    } catch {
-      notify("이 폴더에는 저장할 수 없어요. 다른 폴더를 고르거나 파일별 저장 버튼을 사용해 주세요.", "warn")
-    } finally {
-      setSavingExportFiles(false)
     }
   }
 
@@ -1258,6 +1366,7 @@ export default function App() {
       setSelectedImageId("")
       setSelectedBubbleId("")
       setSelectedDividerId("")
+      setSelectedInlineImageId("")
       setTextSelection(null)
       return
     }
@@ -1271,6 +1380,7 @@ export default function App() {
     if (bubbleBelongsElsewhere) setSelectedBubbleId("")
     const dividerPage = selectedDivider ? pageForBlock(selectedDivider.id, pages) : -1
     if (selectedDivider && dividerPage !== page) setSelectedDividerId("")
+    if (selectedInlineImage && pageForBlock(selectedInlineImage.id, pages) !== page) setSelectedInlineImageId("")
   }
 
   const pageCount = pages.length + (documentState.options.coverMode === "none" ? 0 : 1)
@@ -1373,6 +1483,7 @@ export default function App() {
         selectedImage={selectedImage}
         selectedBubble={selectedBubble}
         selectedDivider={selectedDivider}
+        selectedInlineImage={selectedInlineImage}
         textSelection={textSelection}
         members={documentState.members}
         customPresets={customPresets}
@@ -1387,12 +1498,16 @@ export default function App() {
         onSavePreset={savePreset}
         onDeletePreset={(id) => setCustomPresets((current) => current.filter((preset) => preset.id !== id))}
         onAddMark={addMark}
+        onSetMark={setMark}
         onSetAlign={setSelectionAlign}
-        onClearMarks={() => commit((current) => ({ ...current, marks: [] }))}
+        onClearMarks={clearSelectionMarks}
         onUploadCover={uploadCover}
         onAddImage={(file) => addImage(file)}
         onPatchImage={(patch) => selectedImage && patchImage(selectedImage.id, patch)}
         onDeleteImage={() => deleteImage()}
+        onAddInlineImage={addInlineImage}
+        onPatchInlineImage={(patch, transient) => selectedInlineImage && patchInlineImage(selectedInlineImage.id, patch, transient)}
+        onDeleteInlineImage={() => deleteInlineImage()}
         onAddMember={addMember}
         onPatchMember={patchMember}
         onSetMemberAvatar={setMemberAvatar}
@@ -1477,6 +1592,7 @@ export default function App() {
             selectedImageId={selectedImageId}
             selectedBubbleId={selectedBubbleId}
             selectedDividerId={selectedDividerId}
+            selectedInlineImageId={selectedInlineImageId}
             pendingCaret={pendingCaret}
             transformMode={transformMode}
             onSelectPage={selectPage}
@@ -1484,16 +1600,26 @@ export default function App() {
               setSelectedImageId(id)
               setSelectedBubbleId("")
               setSelectedDividerId("")
+              setSelectedInlineImageId("")
               setActiveTab("image")
             }}
             onSelectBubble={(id) => {
               setSelectedBubbleId(id)
               setSelectedDividerId("")
               setSelectedImageId("")
+              setSelectedInlineImageId("")
               setActiveTab("dialogue")
             }}
             onSelectDivider={(id) => {
               setSelectedDividerId(id)
+              setSelectedBubbleId("")
+              setSelectedImageId("")
+              setSelectedInlineImageId("")
+              setActiveTab("manuscript")
+            }}
+            onSelectInlineImage={(id) => {
+              setSelectedInlineImageId(id)
+              setSelectedDividerId("")
               setSelectedBubbleId("")
               setSelectedImageId("")
               setActiveTab("manuscript")
@@ -1506,6 +1632,8 @@ export default function App() {
             onDeleteBubble={deleteBubble}
             onMeasureBubbles={reportBubbleHeights}
             onDeleteDivider={deleteDivider}
+            onChangeInlineImage={(id, patch) => patchInlineImage(id, patch, true)}
+            onDeleteInlineImage={deleteInlineImage}
             onChangePageText={replacePageText}
             onCaretRestored={clearPendingCaret}
             onSelectText={setTextSelection}
@@ -1522,14 +1650,6 @@ export default function App() {
           <kbd>Ctrl T</kbd>
         </div>
         <HamsterMascot message={mascotMessage} active={exporting || saveStatus === "saving"} />
-        <ExportTray
-          files={exportFiles}
-          saving={savingExportFiles}
-          canSaveDirectory={supportsDirectoryExport()}
-          onDownload={downloadExportFile}
-          onSaveDirectory={savePreparedExports}
-          onClose={() => setExportFiles([])}
-        />
       </section>
     </main>
   )

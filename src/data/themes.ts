@@ -2,7 +2,7 @@ import type { BookOptions, ThemePreset } from "../types"
 
 export const DEFAULT_OPTIONS: BookOptions = {
   themeId: "paper-white",
-  pageWidth: 460,
+  pageWidth: 620,
   paddingX: 54,
   paddingY: 60,
   fontFamily: "RIDIBatang",
@@ -13,6 +13,7 @@ export const DEFAULT_OPTIONS: BookOptions = {
   letterSpacing: 0,
   paragraphSpacing: 12,
   scaleX: 1,
+  defaultTextAlign: "justify",
   textColor: "#242822",
   backgroundColor: "#fbfaf6",
   pageTexture: "paper",
@@ -22,10 +23,13 @@ export const DEFAULT_OPTIONS: BookOptions = {
   bracketItalic: true,
   accentColors: ["#f4cc55", "#9fd9cf", "#f3a6b5"],
   highlightColor: "#f4cc55",
+  highlightOpacity: 0.38,
   coverMode: "image-text",
   coverTitle: "작고 사적인 방",
+  coverTitleFont: "RIDIBatang",
   coverTitleColor: "",
   coverSubtitle: "오늘의 문장과 장면을 엮습니다",
+  coverSubtitleFont: "RIDIBatang",
   coverSubtitleColor: "",
   coverImage: "",
 }

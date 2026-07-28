@@ -1,4 +1,4 @@
-export type EditorTab = "manuscript" | "theme" | "image" | "dialogue" | "layout" | "footer" | "export"
+export type EditorTab = "manuscript" | "book" | "theme" | "image" | "dialogue" | "layout" | "export"
 export type CoverMode = "image-text" | "image" | "text" | "none"
 export type ExportMode = "selected" | "single" | "spread"
 export type MarkKind = "highlight" | "color" | "italic" | "bold" | "font" | "align"
@@ -74,9 +74,25 @@ export type DividerBlock = {
   order: number
 }
 
+export type InlineImageBlock = {
+  id: string
+  anchor: number
+  src: string
+  name: string
+  width: number
+  aspectRatio: number
+  scale: number
+  x: number
+  y: number
+  align: "left" | "center" | "right"
+  order: number
+}
+
 export type FooterNote = {
   title: string
   subtitle: string
+  titleFont: string
+  subtitleFont: string
   color: string
   italic: boolean
   weight: number
@@ -95,6 +111,7 @@ export type BookOptions = {
   letterSpacing: number
   paragraphSpacing: number
   scaleX: number
+  defaultTextAlign: "left" | "center" | "right" | "justify"
   textColor: string
   backgroundColor: string
   pageTexture: string
@@ -104,10 +121,13 @@ export type BookOptions = {
   bracketItalic: boolean
   accentColors: [string, string, string]
   highlightColor: string
+  highlightOpacity: number
   coverMode: CoverMode
   coverTitle: string
+  coverTitleFont: string
   coverTitleColor: string
   coverSubtitle: string
+  coverSubtitleFont: string
   coverSubtitleColor: string
   coverImage: string
 }
@@ -121,6 +141,7 @@ export type BookDocument = {
   members: MemberProfile[]
   speechBubbles: SpeechBubble[]
   dividers: DividerBlock[]
+  inlineImages: InlineImageBlock[]
   marks: TextMark[]
   footers: Record<number, FooterNote>
   updatedAt: string

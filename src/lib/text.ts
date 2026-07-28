@@ -83,6 +83,7 @@ export function applyAlignmentMark(
   end: number,
   value: string,
   createId: () => string = () => crypto.randomUUID(),
+  defaultValue = "left",
 ) {
   const retained = marks.flatMap((mark) => {
     if (mark.kind !== "align" || mark.end <= start || mark.start >= end) return [mark]
@@ -97,9 +98,44 @@ export function applyAlignmentMark(
     }
     return parts
   })
-  return value === "left" || start >= end
+  return value === defaultValue || start >= end
     ? retained
     : [...retained, { id: createId(), start, end, kind: "align" as const, value }]
+}
+
+export function applyRangeMark(
+  marks: TextMark[],
+  start: number,
+  end: number,
+  kind: TextMark["kind"],
+  value: string,
+  createId: () => string = () => crypto.randomUUID(),
+) {
+  const retained = marks.flatMap((mark) => {
+    if (mark.kind !== kind || mark.end <= start || mark.start >= end) return [mark]
+    const parts: TextMark[] = []
+    if (mark.start < start) parts.push({ ...mark, end: start })
+    if (mark.end > end) parts.push({ ...mark, id: parts.length ? createId() : mark.id, start: end })
+    return parts
+  })
+  return value && start < end
+    ? [...retained, { id: createId(), start, end, kind, value }]
+    : retained
+}
+
+export function clearInlineMarksInRange(
+  marks: TextMark[],
+  start: number,
+  end: number,
+  createId: () => string = () => crypto.randomUUID(),
+) {
+  return marks.flatMap((mark) => {
+    if (mark.kind === "align" || mark.end <= start || mark.start >= end) return [mark]
+    const parts: TextMark[] = []
+    if (mark.start < start) parts.push({ ...mark, end: start })
+    if (mark.end > end) parts.push({ ...mark, id: parts.length ? createId() : mark.id, start: end })
+    return parts
+  })
 }
 
 export function segmentOwnsCaret(start: number, end: number, bodyLength: number, offset: number) {

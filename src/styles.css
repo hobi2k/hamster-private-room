@@ -404,6 +404,75 @@ svg {
   box-shadow: inset 0 -5px color-mix(in srgb, var(--highlight) 58%, transparent);
 }
 
+.highlight-popover {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--honey);
+  border-radius: 8px;
+  background: #fffdf8;
+  box-shadow: 0 10px 24px rgba(91, 61, 25, 0.14);
+}
+
+.highlight-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.highlight-popover-head .icon-button {
+  width: 28px;
+  height: 28px;
+}
+
+.highlight-live-color {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.highlight-live-color > span {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+}
+
+.highlight-live-color input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.highlight-live-color small {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.highlight-preview {
+  justify-self: start;
+  padding: 2px 3px;
+  background: linear-gradient(transparent 42%, var(--preview-highlight) 42%, var(--preview-highlight) 88%, transparent 88%);
+  color: var(--ink);
+  font-family: "RIDIBatang", serif;
+  font-size: 12px;
+}
+
+.inline-image-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.inline-align-toolbar {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .swatch-button::before {
   content: "";
   width: 16px;
@@ -1840,6 +1909,11 @@ kbd {
 .flow-text-block {
   display: block;
   min-height: 1lh;
+  text-justify: inter-word;
+  text-align-last: auto;
+  word-break: normal;
+  word-spacing: normal;
+  overflow-wrap: break-word;
 }
 
 .flow-text-segment:empty {
@@ -1895,6 +1969,72 @@ kbd {
 
 .flow-divider.is-selected {
   box-shadow: inset 0 0 0 0.3cqw var(--honey);
+}
+
+.flow-inline-image {
+  position: relative;
+  overflow: hidden;
+  margin-block: 2.2cqw;
+  border-radius: 2.2cqw;
+  background: rgba(0, 0, 0, 0.035);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.flow-inline-image.align-left {
+  margin-right: auto;
+}
+
+.flow-inline-image.align-center {
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.flow-inline-image.align-right {
+  margin-left: auto;
+}
+
+.flow-inline-image:active {
+  cursor: grabbing;
+}
+
+.flow-inline-image.is-selected {
+  box-shadow: 0 0 0 0.35cqw var(--honey);
+}
+
+.flow-inline-image > img {
+  position: absolute;
+  display: block;
+  max-width: none;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+.inline-image-delete {
+  position: absolute;
+  z-index: 2;
+  top: 1.2cqw;
+  right: 1.2cqw;
+  display: grid;
+  width: 5cqw;
+  height: 5cqw;
+  min-width: 26px;
+  min-height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0.2cqw solid #ffffff;
+  border-radius: 50%;
+  background: #fff1ed;
+  color: #a5472e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+.inline-image-delete svg {
+  width: 50%;
+  height: 50%;
 }
 
 .divider-line {

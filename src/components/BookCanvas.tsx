@@ -1,12 +1,12 @@
 import { ArrowDown, ArrowLeftRight, ArrowUp, Check, RotateCw, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode } from "react"
+import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode, WheelEvent } from "react"
 import { avatarStyle } from "../lib/avatar"
 import { editableElementText, readFlowTextSelection, selectionTextLength } from "../lib/domText"
 import { decoratePage } from "../lib/pagination"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
 import { adjacentDeletionRange, diffRange, segmentOwnsCaret } from "../lib/text"
-import type { BookDocument, DividerBlock, ImageLayer, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
+import type { BookDocument, DividerBlock, ImageLayer, InlineImageBlock, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
 
 type Props = {
   document: BookDocument
@@ -16,12 +16,14 @@ type Props = {
   selectedImageId: string
   selectedBubbleId: string
   selectedDividerId: string
+  selectedInlineImageId: string
   pendingCaret: { offset: number; beforeBlockId: string | null } | null
   transformMode: boolean
   onSelectPage: (page: number, additive?: boolean) => void
   onSelectImage: (id: string) => void
   onSelectBubble: (id: string) => void
   onSelectDivider: (id: string) => void
+  onSelectInlineImage: (id: string) => void
   onAddImage: (file: File, page: number) => void
   onChangeImage: (id: string, patch: Partial<ImageLayer>) => void
   onDeleteImage: (id: string) => void
@@ -30,6 +32,8 @@ type Props = {
   onDeleteBubble: (id: string) => void
   onMeasureBubbles: (heights: Record<string, number>) => void
   onDeleteDivider: (id: string) => void
+  onChangeInlineImage: (id: string, patch: Partial<InlineImageBlock>) => void
+  onDeleteInlineImage: (id: string) => void
   onChangePageText: (
     start: number,
     end: number,
@@ -79,7 +83,7 @@ function inlineTextHtml(document: BookDocument, start: number, end: number) {
 
 function paragraphAlign(document: BookDocument, start: number, end: number) {
   const mark = document.marks.find((item) => item.kind === "align" && item.start < end && item.end > start)
-  return mark && ["left", "center", "right", "justify"].includes(mark.value) ? mark.value : ""
+  return mark && ["left", "center", "right", "justify"].includes(mark.value) ? mark.value : document.options.defaultTextAlign
 }
 
 function decoratedTextHtml(document: BookDocument, start: number, end: number) {
@@ -507,6 +511,11 @@ function ImageItem({
   onInteractionEnd: () => void
 }) {
   const session = useRef<PointerSession | null>(null)
+  const wheelEnd = useRef<number | null>(null)
+
+  useEffect(() => () => {
+    if (wheelEnd.current !== null) window.clearTimeout(wheelEnd.current)
+  }, [])
 
   const start = (event: PointerEvent<HTMLDivElement>, action: PointerSession["action"]) => {
     event.preventDefault()
@@ -572,6 +581,19 @@ function ImageItem({
     onInteractionEnd()
   }
 
+  const zoom = (event: WheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    onSelect()
+    if (wheelEnd.current === null) onInteractionStart()
+    onChange({ width: Math.max(8, Math.min(500, layer.width + (event.deltaY < 0 ? 6 : -6))) })
+    if (wheelEnd.current !== null) window.clearTimeout(wheelEnd.current)
+    wheelEnd.current = window.setTimeout(() => {
+      wheelEnd.current = null
+      onInteractionEnd()
+    }, 180)
+  }
+
   return (
     <div
       className={selected ? "image-layer is-selected" : "image-layer"}
@@ -587,6 +609,7 @@ function ImageItem({
       onPointerMove={move}
       onPointerUp={end}
       onPointerCancel={end}
+      onWheel={zoom}
       data-image-layer={layer.id}
     >
       <img
@@ -815,21 +838,128 @@ function FlowDividerItem({
   )
 }
 
+function FlowInlineImageItem({
+  image,
+  selected,
+  onSelect,
+  onChange,
+  onDelete,
+  onInteractionStart,
+  onInteractionEnd,
+}: {
+  image: InlineImageBlock
+  selected: boolean
+  onSelect: () => void
+  onChange: (patch: Partial<InlineImageBlock>) => void
+  onDelete: () => void
+  onInteractionStart: () => void
+  onInteractionEnd: () => void
+}) {
+  const drag = useRef<{ x: number; y: number; originX: number; originY: number; width: number; height: number } | null>(null)
+  const wheelEnd = useRef<number | null>(null)
+
+  useEffect(() => () => {
+    if (wheelEnd.current !== null) window.clearTimeout(wheelEnd.current)
+  }, [])
+
+  const start = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    onSelect()
+    drag.current = {
+      x: event.clientX,
+      y: event.clientY,
+      originX: image.x,
+      originY: image.y,
+      width: event.currentTarget.clientWidth,
+      height: event.currentTarget.clientHeight,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    onInteractionStart()
+  }
+
+  const move = (event: PointerEvent<HTMLDivElement>) => {
+    const current = drag.current
+    if (!current || image.scale <= 100) return
+    onChange({
+      x: Math.max(0, Math.min(100, current.originX - ((event.clientX - current.x) / Math.max(1, current.width)) * 100)),
+      y: Math.max(0, Math.min(100, current.originY - ((event.clientY - current.y) / Math.max(1, current.height)) * 100)),
+    })
+  }
+
+  const end = (event: PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return
+    drag.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    onInteractionEnd()
+  }
+
+  const zoom = (event: WheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    onSelect()
+    if (wheelEnd.current === null) onInteractionStart()
+    onChange({ scale: Math.max(100, Math.min(400, image.scale + (event.deltaY < 0 ? 10 : -10))) })
+    if (wheelEnd.current !== null) window.clearTimeout(wheelEnd.current)
+    wheelEnd.current = window.setTimeout(() => {
+      wheelEnd.current = null
+      onInteractionEnd()
+    }, 180)
+  }
+
+  return (
+    <div
+      className={`flow-inline-image align-${image.align}${selected ? " is-selected" : ""}`}
+      style={{ width: `${image.width}%`, aspectRatio: String(image.aspectRatio) }}
+      contentEditable={false}
+      data-flow-inline-image={image.id}
+      onPointerDown={start}
+      onPointerMove={move}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onWheel={zoom}
+    >
+      <img
+        src={image.src}
+        alt={image.name}
+        draggable={false}
+        style={{
+          width: `${image.scale}%`,
+          height: `${image.scale}%`,
+          left: `${image.x}%`,
+          top: `${image.y}%`,
+          transform: `translate(-${image.x}%, -${image.y}%)`,
+        }}
+      />
+      {selected ? (
+        <button className="inline-image-delete" type="button" onPointerDown={(event) => event.stopPropagation()} onClick={onDelete} title="본문 이미지 삭제">
+          <Trash2 aria-hidden="true" />
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function PageFlowEditor({
   document,
   page,
   bubbles,
   dividers,
+  inlineImages,
   selectedBubbleId,
   selectedDividerId,
+  selectedInlineImageId,
   pendingCaret,
   onSelectPage,
   onSelectBubble,
   onSelectDivider,
+  onSelectInlineImage,
   onChangeBubble,
   onMoveBubble,
   onDeleteBubble,
   onDeleteDivider,
+  onChangeInlineImage,
+  onDeleteInlineImage,
   onChangePageText,
   onCaretRestored,
   onSelectText,
@@ -840,16 +970,21 @@ function PageFlowEditor({
   page: PageSlice
   bubbles: SpeechBubble[]
   dividers: DividerBlock[]
+  inlineImages: InlineImageBlock[]
   selectedBubbleId: string
   selectedDividerId: string
+  selectedInlineImageId: string
   pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
   onSelectBubble: (id: string) => void
   onSelectDivider: (id: string) => void
+  onSelectInlineImage: (id: string) => void
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
   onDeleteDivider: (id: string) => void
+  onChangeInlineImage: (id: string, patch: Partial<InlineImageBlock>) => void
+  onDeleteInlineImage: (id: string) => void
   onChangePageText: Props["onChangePageText"]
   onCaretRestored: () => void
   onSelectText: (selection: TextSelection) => void
@@ -862,10 +997,12 @@ function PageFlowEditor({
   const ordered = [
     ...bubbles.map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: bubble.flowRank ?? 0, type: "bubble" as const, bubble })),
     ...dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1, type: "divider" as const, divider })),
+    ...inlineImages.map((image) => ({ id: image.id, anchor: image.anchor, order: image.order, rank: 2, type: "image" as const, image })),
   ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
   const globalOrder = [
     ...document.speechBubbles.filter((bubble) => bubble.page > 0).map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: bubble.flowRank ?? 0 })),
     ...document.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
+    ...document.inlineImages.map((image) => ({ id: image.id, anchor: image.anchor, order: image.order, rank: 2 })),
   ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
   const nodes: ReactNode[] = []
   let cursor = page.start
@@ -922,13 +1059,24 @@ function PageFlowEditor({
         onInteractionStart={onInteractionStart}
         onInteractionEnd={onInteractionEnd}
       />
-    ) : (
+    ) : item.type === "divider" ? (
       <FlowDividerItem
         key={`divider:${item.id}`}
         divider={item.divider}
         selected={item.id === selectedDividerId}
         onSelect={() => onSelectDivider(item.id)}
         onDelete={() => onDeleteDivider(item.id)}
+      />
+    ) : (
+      <FlowInlineImageItem
+        key={`inline-image:${item.id}`}
+        image={item.image}
+        selected={item.id === selectedInlineImageId}
+        onSelect={() => onSelectInlineImage(item.id)}
+        onChange={(patch) => onChangeInlineImage(item.id, patch)}
+        onDelete={() => onDeleteInlineImage(item.id)}
+        onInteractionStart={onInteractionStart}
+        onInteractionEnd={onInteractionEnd}
       />
     ))
     cursor = anchor
@@ -1129,8 +1277,8 @@ function DropPage({
             fontWeight: document.footers[page].weight,
           }}
         >
-          <strong>{document.footers[page].title}</strong>
-          <span>{document.footers[page].subtitle}</span>
+          <strong style={{ fontFamily: `"${document.footers[page].titleFont}", "Noto Serif KR", serif` }}>{document.footers[page].title}</strong>
+          <span style={{ fontFamily: `"${document.footers[page].subtitleFont}", "Noto Serif KR", serif` }}>{document.footers[page].subtitle}</span>
         </footer>
       ) : null}
       {page > 0 ? <span className="page-number">{page}</span> : null}
@@ -1182,10 +1330,16 @@ export function BookCanvas(props: Props) {
           ) : null}
           {coverHasText ? (
             <div className={coverHasImage && props.document.options.coverImage ? "cover-copy is-over-image" : "cover-copy"}>
-              <h1 style={props.document.options.coverTitleColor ? { color: props.document.options.coverTitleColor } : undefined}>
+              <h1 style={{
+                color: props.document.options.coverTitleColor || undefined,
+                fontFamily: `"${props.document.options.coverTitleFont}", "Noto Serif KR", serif`,
+              }}>
                 {props.document.options.coverTitle || props.document.title}
               </h1>
-              <p style={props.document.options.coverSubtitleColor ? { color: props.document.options.coverSubtitleColor } : undefined}>
+              <p style={{
+                color: props.document.options.coverSubtitleColor || undefined,
+                fontFamily: `"${props.document.options.coverSubtitleFont}", "Noto Serif KR", serif`,
+              }}>
                 {props.document.options.coverSubtitle}
               </p>
             </div>
@@ -1227,16 +1381,21 @@ export function BookCanvas(props: Props) {
                   : bubble.anchor >= page.start && (bubble.anchor < page.end || index === props.pages.length - 1))
               ))}
               dividers={props.document.dividers.filter((divider) => page.blockIds?.includes(divider.id))}
+              inlineImages={props.document.inlineImages.filter((image) => page.blockIds?.includes(image.id))}
               selectedBubbleId={props.selectedBubbleId}
               selectedDividerId={props.selectedDividerId}
+              selectedInlineImageId={props.selectedInlineImageId}
               pendingCaret={pendingCaretPage === index ? props.pendingCaret : null}
               onSelectPage={() => props.onSelectPage(pageNumber)}
               onSelectBubble={props.onSelectBubble}
               onSelectDivider={props.onSelectDivider}
+              onSelectInlineImage={props.onSelectInlineImage}
               onChangeBubble={props.onChangeBubble}
               onMoveBubble={props.onMoveBubble}
               onDeleteBubble={props.onDeleteBubble}
               onDeleteDivider={props.onDeleteDivider}
+              onChangeInlineImage={props.onChangeInlineImage}
+              onDeleteInlineImage={props.onDeleteInlineImage}
               onChangePageText={props.onChangePageText}
               onCaretRestored={props.onCaretRestored}
               onSelectText={props.onSelectText}

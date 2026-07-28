@@ -26,6 +26,13 @@ export function downloadExportFile(file: ExportFile) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+export async function downloadExportFiles(files: ExportFile[]) {
+  for (const [index, file] of files.entries()) {
+    downloadExportFile(file)
+    if (index < files.length - 1) await new Promise((resolve) => window.setTimeout(resolve, 180))
+  }
+}
+
 async function capture(element: HTMLElement) {
   return html2canvas(element, {
     backgroundColor: null,
