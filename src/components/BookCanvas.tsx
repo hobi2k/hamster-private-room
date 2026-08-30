@@ -4,9 +4,10 @@ import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, M
 import { avatarStyle } from "../lib/avatar"
 import { editableElementText, readFlowTextSelection, restoreEditableSelection, selectionTextLength } from "../lib/domText"
 import { decoratePage } from "../lib/pagination"
+import { defaultPageAppearance, defaultPageMeta, pageBackground } from "../lib/page"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
 import { adjacentDeletionRange, diffRange, segmentOwnsCaret } from "../lib/text"
-import type { BookDocument, DividerBlock, ImageLayer, InlineImageBlock, MemberProfile, PageSlice, SpeechBubble, TextSelection } from "../types"
+import type { BookDocument, DividerBlock, HtmlCardBlock, ImageLayer, InlineImageBlock, MemberProfile, PageSlice, SpeechBubble, StickerLayer, TextSelection } from "../types"
 
 type Props = {
   document: BookDocument
@@ -17,6 +18,8 @@ type Props = {
   selectedBubbleId: string
   selectedDividerId: string
   selectedInlineImageId: string
+  selectedHtmlCardId: string
+  selectedStickerId: string
   pendingCaret: { offset: number; beforeBlockId: string | null } | null
   transformMode: boolean
   onSelectPage: (page: number, additive?: boolean) => void
@@ -24,6 +27,8 @@ type Props = {
   onSelectBubble: (id: string) => void
   onSelectDivider: (id: string) => void
   onSelectInlineImage: (id: string) => void
+  onSelectHtmlCard: (id: string) => void
+  onSelectSticker: (id: string) => void
   onAddImage: (file: File, page: number) => void
   onChangeImage: (id: string, patch: Partial<ImageLayer>) => void
   onDeleteImage: (id: string) => void
@@ -34,6 +39,10 @@ type Props = {
   onDeleteDivider: (id: string) => void
   onChangeInlineImage: (id: string, patch: Partial<InlineImageBlock>) => void
   onDeleteInlineImage: (id: string) => void
+  onChangeHtmlCard: (id: string, patch: Partial<HtmlCardBlock>) => void
+  onDeleteHtmlCard: (id: string) => void
+  onChangeSticker: (id: string, patch: Partial<StickerLayer>) => void
+  onDeleteSticker: (id: string) => void
   onChangePageText: (
     start: number,
     end: number,
@@ -74,6 +83,7 @@ function inlineTextHtml(document: BookDocument, start: number, end: number) {
       slice.style.fontStyle ? `font-style:${escapeHtml(slice.style.fontStyle)}` : "",
       slice.style.fontWeight ? `font-weight:${slice.style.fontWeight}` : "",
       slice.style.fontFamily ? `font-family:'${escapeHtml(slice.style.fontFamily.replace(/["'\\]/g, ""))}', 'Noto Serif KR', serif` : "",
+      slice.style.textDecoration ? `text-decoration:${escapeHtml(slice.style.textDecoration)}` : "",
     ].filter(Boolean).join(";")
     return slice.text.split(/(\n)/).map((bit) => bit === "\n"
       ? "<br>"
@@ -474,6 +484,7 @@ function FlowTextSegment({
 
 function ImageItem({
   layer,
+  pageRatio,
   selected,
   transformMode,
   onSelect,
@@ -483,6 +494,7 @@ function ImageItem({
   onInteractionEnd,
 }: {
   layer: ImageLayer
+  pageRatio: number
   selected: boolean
   transformMode: boolean
   onSelect: () => void
@@ -508,7 +520,9 @@ function ImageItem({
     const centerX = pageRect.left + ((layer.x + layer.width / 2) / 100) * pageRect.width
     // Half-height must use aspectRatio to match move()'s pivot, otherwise the
     // rotation snaps the instant the handle is grabbed.
-    const centerY = pageRect.top + (layer.y / 100) * pageRect.height + (layer.width / (200 * (layer.aspectRatio ?? 1))) * pageRect.width
+    const centerY = layer.stretch
+      ? pageRect.top + ((layer.y + (layer.height ?? 100) / 2) / 100) * pageRect.height
+      : pageRect.top + (layer.y / 100) * pageRect.height + (layer.width / (200 * (layer.aspectRatio ?? 1))) * pageRect.width
     session.current = {
       action,
       id: layer.id,
@@ -528,7 +542,7 @@ function ImageItem({
     const dx = ((event.clientX - current.startX) / current.pageRect.width) * 100
     const dy = ((event.clientY - current.startY) / current.pageRect.height) * 100
     if (current.action === "move") {
-      const height = current.layer.width / ((current.layer.aspectRatio ?? 1) * 1.414)
+      const height = current.layer.stretch ? current.layer.height ?? 100 : current.layer.width / ((current.layer.aspectRatio ?? 1) * pageRatio)
       onChange({
         x: Math.max(-current.layer.width + 3, Math.min(97, current.layer.x + dx)),
         y: Math.max(-height + 3, Math.min(97, current.layer.y + dy)),
@@ -550,7 +564,9 @@ function ImageItem({
       return
     }
     const centerX = current.pageRect.left + ((current.layer.x + current.layer.width / 2) / 100) * current.pageRect.width
-    const centerY = current.pageRect.top + (current.layer.y / 100) * current.pageRect.height + (current.layer.width / (200 * (current.layer.aspectRatio ?? 1))) * current.pageRect.width
+    const centerY = current.layer.stretch
+      ? current.pageRect.top + ((current.layer.y + (current.layer.height ?? 100) / 2) / 100) * current.pageRect.height
+      : current.pageRect.top + (current.layer.y / 100) * current.pageRect.height + (current.layer.width / (200 * (current.layer.aspectRatio ?? 1))) * current.pageRect.width
     const angle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * (180 / Math.PI)
     onChange({ rotation: Math.round(current.layer.rotation + angle - current.startAngle) })
   }
@@ -577,15 +593,17 @@ function ImageItem({
 
   return (
     <div
-      className={selected ? "image-layer is-selected" : "image-layer"}
+      className={`image-layer${layer.stretch ? " is-stretched" : ""}${selected ? " is-selected" : ""}`}
       style={{
         left: `${layer.x}%`,
         top: `${layer.y}%`,
         width: `${layer.width}%`,
+        height: layer.stretch ? `${layer.height ?? 100}%` : undefined,
         opacity: layer.opacity,
         zIndex: layer.zIndex + 10,
         transform: `rotate(${layer.rotation}deg)`,
-      }}
+        "--image-overlay": String(layer.overlay ?? 0),
+      } as CSSProperties}
       onPointerDown={(event) => start(event, "move")}
       onPointerMove={move}
       onPointerUp={end}
@@ -597,6 +615,7 @@ function ImageItem({
         src={layer.src}
         alt={layer.name}
         draggable={false}
+        style={{ filter: layer.grayscale ? "grayscale(1)" : undefined, height: layer.stretch ? "100%" : undefined }}
         onLoad={(event) => {
           if (layer.aspectRatio) return
           onChange({ aspectRatio: event.currentTarget.naturalWidth / Math.max(1, event.currentTarget.naturalHeight) })
@@ -647,8 +666,13 @@ function SpeechBubbleItem({
   const secondaryRef = useRef<HTMLElement>(null)
   const avatar = profile?.avatar ?? ""
   const speakerName = profile?.name ?? bubble.speakerName
-  const bubbleColor = profile?.bubbleColor ?? bubble.bubbleColor
-  const textColor = profile?.textColor ?? bubble.textColor
+  const bubbleColor = bubble.bubbleColor
+  const textColor = bubble.textColor
+  const nameColor = bubble.nameColor ?? profile?.nameColor ?? textColor
+  const nameOutline = bubble.nameOutline ?? profile?.nameOutline ?? false
+  const nameOutlineColor = bubble.nameOutlineColor ?? profile?.nameOutlineColor ?? "#ffffff"
+  const showName = !bubble.continuation && bubble.showName !== false && !profile?.hideName
+  const showAvatar = Boolean(profile) && !bubble.continuation
   const messageHtml = escapeHtml(bubble.text).replaceAll("\n", "<br>")
   const secondaryHtml = escapeHtml(bubble.secondaryText).replaceAll("\n", "<br>")
 
@@ -682,19 +706,26 @@ function SpeechBubbleItem({
     onInteractionEnd()
   }
 
-  const avatarNode = avatar ? (
+  const avatarNode = showAvatar ? (
     <span className="speech-avatar">
-      <img
-        src={avatar}
-        alt={`${speakerName} 프로필`}
-        draggable={false}
-        style={profile ? avatarStyle(profile) : undefined}
-      />
+      {avatar ? (
+        <img
+          src={avatar}
+          alt={`${speakerName} 프로필`}
+          draggable={false}
+          style={profile ? avatarStyle(profile) : undefined}
+        />
+      ) : (
+        <span
+          className="speech-avatar-label"
+          style={{ background: profile?.backgroundColor ?? "#ffffff", color: profile?.labelColor ?? "#777777" }}
+        >{profile?.label || speakerName.slice(0, 1)}</span>
+      )}
     </span>
   ) : null
   const cardNode = (
     <div className="speech-card">
-      {speakerName && bubble.showName !== false ? <strong>{speakerName}</strong> : null}
+      {speakerName && showName ? <strong>{speakerName}</strong> : null}
       <p
         ref={messageRef}
         contentEditable={selected}
@@ -721,7 +752,7 @@ function SpeechBubbleItem({
 
   return (
     <div
-      className={`speech-layer side-${bubble.side}${flow ? " is-flow" : ""}${avatar ? " has-avatar" : " is-text-only"}${selected ? " is-selected" : ""}${!flow && bubble.y < 8 ? " is-near-top" : ""}`}
+      className={`speech-layer side-${bubble.side}${flow ? " is-flow" : ""}${showAvatar ? " has-avatar" : " is-text-only"}${bubble.continuation ? " is-continuation" : ""}${selected ? " is-selected" : ""}${!flow && bubble.y < 8 ? " is-near-top" : ""}`}
       style={{
         left: flow ? undefined : bubble.side === "left" ? "8%" : "auto",
         right: flow ? undefined : bubble.side === "right" ? "8%" : "auto",
@@ -730,10 +761,12 @@ function SpeechBubbleItem({
         // narrower text column, so `%` would resolve against the wrong box and
         // clip un-wrappable text — use cqw (relative to .book-page) to match the
         // avatar/padding units and estimateSpeechBubbleHeight's page-width basis.
-        width: `${bubble.autoWidth === false ? bubble.width : speechBubbleWidth(bubble, speakerName, Boolean(avatar))}cqw`,
+        width: `${bubble.autoWidth === false ? bubble.width : speechBubbleWidth(bubble, speakerName, showAvatar)}cqw`,
         zIndex: bubble.zIndex + 10,
         "--bubble-color": bubbleColor,
         "--bubble-text": textColor,
+        "--bubble-name": nameColor,
+        "--bubble-name-outline": nameOutline ? nameOutlineColor : "transparent",
         "--bubble-message-size": `${2.9 * ((bubble.textScale ?? 100) / 100)}cqw`,
         "--bubble-secondary-size": `${2.1 * ((bubble.secondaryTextScale ?? 100) / 100)}cqw`,
       } as CSSProperties}
@@ -809,7 +842,9 @@ function FlowDividerItem({
       <span className="divider-line" />
       {divider.style === "diamond" ? <span className="divider-motif" aria-hidden="true">◆ ◆ ◆</span> : null}
       {divider.style === "dots" ? <span className="divider-motif is-dots" aria-hidden="true">● ● ●</span> : null}
-      {divider.style === "diamond" || divider.style === "dots" ? <span className="divider-line" /> : null}
+      {divider.style === "asterism" ? <span className="divider-motif" aria-hidden="true">✦ ✦ ✦</span> : null}
+      {divider.style === "wave" ? <span className="divider-motif" aria-hidden="true">〜 〜 〜</span> : null}
+      {divider.style === "diamond" || divider.style === "dots" || divider.style === "asterism" || divider.style === "wave" ? <span className="divider-line" /> : null}
       {selected ? (
         <button className="divider-delete" type="button" onClick={onDelete} title="구분선 삭제" aria-label="구분선 삭제">
           <Trash2 aria-hidden="true" />
@@ -821,6 +856,7 @@ function FlowDividerItem({
 
 function FlowInlineImageItem({
   image,
+  pageWidth,
   selected,
   onSelect,
   onChange,
@@ -829,6 +865,7 @@ function FlowInlineImageItem({
   onInteractionEnd,
 }: {
   image: InlineImageBlock
+  pageWidth: number
   selected: boolean
   onSelect: () => void
   onChange: (patch: Partial<InlineImageBlock>) => void
@@ -891,7 +928,12 @@ function FlowInlineImageItem({
   return (
     <div
       className={`flow-inline-image align-${image.align}${selected ? " is-selected" : ""}`}
-      style={{ width: `${image.width}%`, aspectRatio: String(image.aspectRatio) }}
+      style={{
+        width: `${image.width}%`,
+        height: image.height ? `${(image.height / pageWidth) * 100}cqw` : undefined,
+        aspectRatio: image.height ? undefined : String(image.aspectRatio),
+        opacity: image.opacity ?? 1,
+      }}
       contentEditable={false}
       data-flow-inline-image={image.id}
       onPointerDown={start}
@@ -921,26 +963,153 @@ function FlowInlineImageItem({
   )
 }
 
+function FlowHtmlCardItem({
+  card,
+  selected,
+  onSelect,
+  onDelete,
+}: {
+  card: HtmlCardBlock
+  selected: boolean
+  onSelect: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div
+      className={`flow-html-card align-${card.align}${selected ? " is-selected" : ""}`}
+      style={{ width: `${card.width}%`, "--html-card-scale": String(card.scale / 100) } as CSSProperties}
+      contentEditable={false}
+      data-flow-html-card={card.id}
+      onPointerDown={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (window.document.activeElement instanceof HTMLElement) window.document.activeElement.blur()
+        onSelect()
+      }}
+    >
+      <div className="html-card-content" dangerouslySetInnerHTML={{ __html: card.html }} />
+      {selected ? (
+        <button className="html-card-delete" type="button" onClick={onDelete} title="HTML 카드 삭제">
+          <Trash2 aria-hidden="true" />
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function StickerVisual({ sticker }: { sticker: StickerLayer }) {
+  if (sticker.kind === "custom" && sticker.src) return <img src={sticker.src} alt={sticker.name} draggable={false} />
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const }
+  return (
+    <svg viewBox="0 0 24 24" aria-label={sticker.name}>
+      {sticker.kind === "heart" ? <path {...common} d="M12 20s-8-4.9-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 9c0 6.1-8 11-8 11Z" /> : null}
+      {sticker.kind === "star" ? <path {...common} d="m12 2.8 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3-4.6-4.4 6.3-.9L12 2.8Z" /> : null}
+      {sticker.kind === "sparkle" ? <><path {...common} d="M12 2c.7 5.7 3.2 8.3 9 9-5.8.7-8.3 3.3-9 9-.7-5.7-3.2-8.3-9-9 5.8-.7 8.3-3.3 9-9Z" /><path {...common} d="M19 2v4M21 4h-4" /></> : null}
+      {sticker.kind === "flower" ? <><circle {...common} cx="12" cy="12" r="2.2" /><path {...common} d="M12 9.8C8 8.4 8 4.2 10.2 3c2.7-1.4 4.5 2.2 1.8 6.8ZM14.2 12c1.4-4 5.6-4 6.8-1.8 1.4 2.7-2.2 4.5-6.8 1.8ZM12 14.2c4 1.4 4 5.6 1.8 6.8-2.7 1.4-4.5-2.2-1.8-6.8ZM9.8 12c-1.4 4-5.6 4-6.8 1.8C1.6 11.1 5.2 9.3 9.8 12Z" /></> : null}
+      {sticker.kind === "smile" ? <><circle {...common} cx="12" cy="12" r="9" /><path {...common} d="M8.5 10h.01M15.5 10h.01M8.5 14c1.8 2 5.2 2 7 0" /></> : null}
+      {sticker.kind === "leaf" ? <><path {...common} d="M20 4C10 4 4 9 4 18c7 1 14-4 16-14Z" /><path {...common} d="M5 18c3-4 7-7 12-10" /></> : null}
+      {sticker.kind === "moon" ? <path {...common} d="M19 16.5A8.5 8.5 0 0 1 8.1 5.3 8.5 8.5 0 1 0 19 16.5Z" /> : null}
+    </svg>
+  )
+}
+
+function StickerItem({
+  sticker,
+  selected,
+  onSelect,
+  onChange,
+  onDelete,
+  onInteractionStart,
+  onInteractionEnd,
+}: {
+  sticker: StickerLayer
+  selected: boolean
+  onSelect: () => void
+  onChange: (patch: Partial<StickerLayer>) => void
+  onDelete: () => void
+  onInteractionStart: () => void
+  onInteractionEnd: () => void
+}) {
+  const session = useRef<{ action: "move" | "resize"; x: number; y: number; page: DOMRect; sticker: StickerLayer } | null>(null)
+  const start = (event: PointerEvent<HTMLElement>, action: "move" | "resize") => {
+    event.preventDefault()
+    event.stopPropagation()
+    const page = event.currentTarget.closest<HTMLElement>("[data-book-page]")?.getBoundingClientRect()
+    if (!page) return
+    onSelect()
+    session.current = { action, x: event.clientX, y: event.clientY, page, sticker }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    onInteractionStart()
+  }
+  const move = (event: PointerEvent<HTMLElement>) => {
+    const current = session.current
+    if (!current) return
+    if (current.action === "move") {
+      onChange({
+        x: Math.max(0, Math.min(100, current.sticker.x + ((event.clientX - current.x) / current.page.width) * 100)),
+        y: Math.max(0, Math.min(100, current.sticker.y + ((event.clientY - current.y) / current.page.height) * 100)),
+      })
+    } else {
+      onChange({ size: Math.max(24, Math.min(220, current.sticker.size + (event.clientX - current.x))) })
+    }
+  }
+  const end = (event: PointerEvent<HTMLElement>) => {
+    if (!session.current) return
+    session.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    onInteractionEnd()
+  }
+  return (
+    <div
+      className={`sticker-item${selected ? " is-selected" : ""}`}
+      style={{
+        left: `${sticker.x}%`,
+        top: `${sticker.y}%`,
+        width: `${sticker.size}px`,
+        height: `${sticker.size}px`,
+        color: sticker.color,
+        zIndex: sticker.zIndex + 20,
+        transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg) scaleX(${sticker.flipped ? -1 : 1})`,
+      }}
+      data-sticker={sticker.id}
+      onPointerDown={(event) => start(event, "move")}
+      onPointerMove={move}
+      onPointerUp={end}
+      onPointerCancel={end}
+    >
+      <StickerVisual sticker={sticker} />
+      {selected ? <>
+        <button type="button" className="sticker-delete" onPointerDown={(event) => event.stopPropagation()} onClick={onDelete} title="스티커 삭제"><Trash2 aria-hidden="true" /></button>
+        <span className="sticker-resize" onPointerDown={(event) => start(event, "resize")} />
+      </> : null}
+    </div>
+  )
+}
+
 function PageFlowEditor({
   document,
   page,
   bubbles,
   dividers,
   inlineImages,
+  htmlCards,
   selectedBubbleId,
   selectedDividerId,
   selectedInlineImageId,
+  selectedHtmlCardId,
   pendingCaret,
   onSelectPage,
   onSelectBubble,
   onSelectDivider,
   onSelectInlineImage,
+  onSelectHtmlCard,
   onChangeBubble,
   onMoveBubble,
   onDeleteBubble,
   onDeleteDivider,
   onChangeInlineImage,
   onDeleteInlineImage,
+  onDeleteHtmlCard,
   onChangePageText,
   onCaretRestored,
   onSelectText,
@@ -952,20 +1121,24 @@ function PageFlowEditor({
   bubbles: SpeechBubble[]
   dividers: DividerBlock[]
   inlineImages: InlineImageBlock[]
+  htmlCards: HtmlCardBlock[]
   selectedBubbleId: string
   selectedDividerId: string
   selectedInlineImageId: string
+  selectedHtmlCardId: string
   pendingCaret: Props["pendingCaret"]
   onSelectPage: () => void
   onSelectBubble: (id: string) => void
   onSelectDivider: (id: string) => void
   onSelectInlineImage: (id: string) => void
+  onSelectHtmlCard: (id: string) => void
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
   onDeleteDivider: (id: string) => void
   onChangeInlineImage: (id: string, patch: Partial<InlineImageBlock>) => void
   onDeleteInlineImage: (id: string) => void
+  onDeleteHtmlCard: (id: string) => void
   onChangePageText: Props["onChangePageText"]
   onCaretRestored: () => void
   onSelectText: (selection: TextSelection) => void
@@ -979,11 +1152,13 @@ function PageFlowEditor({
     ...bubbles.map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: bubble.flowRank ?? 0, type: "bubble" as const, bubble })),
     ...dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1, type: "divider" as const, divider })),
     ...inlineImages.map((image) => ({ id: image.id, anchor: image.anchor, order: image.order, rank: 2, type: "image" as const, image })),
+    ...htmlCards.map((card) => ({ id: card.id, anchor: card.anchor, order: card.order, rank: 3, type: "html" as const, card })),
   ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
   const globalOrder = [
     ...document.speechBubbles.filter((bubble) => bubble.page > 0).map((bubble) => ({ id: bubble.id, anchor: bubble.anchor, order: bubble.zIndex, rank: bubble.flowRank ?? 0 })),
     ...document.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
     ...document.inlineImages.map((image) => ({ id: image.id, anchor: image.anchor, order: image.order, rank: 2 })),
+    ...document.htmlCards.map((card) => ({ id: card.id, anchor: card.anchor, order: card.order, rank: 3 })),
   ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
   const nodes: ReactNode[] = []
   let cursor = page.start
@@ -1048,16 +1223,25 @@ function PageFlowEditor({
         onSelect={() => onSelectDivider(item.id)}
         onDelete={() => onDeleteDivider(item.id)}
       />
-    ) : (
+    ) : item.type === "image" ? (
       <FlowInlineImageItem
         key={`inline-image:${item.id}`}
         image={item.image}
+        pageWidth={document.options.pageWidth}
         selected={item.id === selectedInlineImageId}
         onSelect={() => onSelectInlineImage(item.id)}
         onChange={(patch) => onChangeInlineImage(item.id, patch)}
         onDelete={() => onDeleteInlineImage(item.id)}
         onInteractionStart={onInteractionStart}
         onInteractionEnd={onInteractionEnd}
+      />
+    ) : (
+      <FlowHtmlCardItem
+        key={`html-card:${item.id}`}
+        card={item.card}
+        selected={item.id === selectedHtmlCardId}
+        onSelect={() => onSelectHtmlCard(item.id)}
+        onDelete={() => onDeleteHtmlCard(item.id)}
       />
     ))
     cursor = anchor
@@ -1086,16 +1270,20 @@ function DropPage({
   children,
   selectedImageId,
   selectedBubbleId,
+  selectedStickerId,
   transformMode,
   onSelectPage,
   onSelectImage,
   onSelectBubble,
+  onSelectSticker,
   onAddImage,
   onChangeImage,
   onDeleteImage,
   onChangeBubble,
   onMoveBubble,
   onDeleteBubble,
+  onChangeSticker,
+  onDeleteSticker,
   onMeasureBubbles,
   onInteractionStart,
   onInteractionEnd,
@@ -1107,16 +1295,20 @@ function DropPage({
   children: ReactNode
   selectedImageId: string
   selectedBubbleId: string
+  selectedStickerId: string
   transformMode: boolean
   onSelectPage: (additive: boolean) => void
   onSelectImage: (id: string) => void
   onSelectBubble: (id: string) => void
+  onSelectSticker: (id: string) => void
   onAddImage: (file: File) => void
   onChangeImage: (id: string, patch: Partial<ImageLayer>) => void
   onDeleteImage: (id: string) => void
   onChangeBubble: (id: string, patch: Partial<SpeechBubble>) => void
   onMoveBubble: (id: string, direction: -1 | 1) => void
   onDeleteBubble: (id: string) => void
+  onChangeSticker: (id: string, patch: Partial<StickerLayer>) => void
+  onDeleteSticker: (id: string) => void
   onMeasureBubbles: (heights: Record<string, number>) => void
   onInteractionStart: () => void
   onInteractionEnd: () => void
@@ -1124,6 +1316,9 @@ function DropPage({
   const pageRef = useRef<HTMLElement>(null)
   const [layoutTops, setLayoutTops] = useState<Record<string, number>>({})
   const options = document.options
+  const appearance = document.pageAppearances[page] ?? defaultPageAppearance(options)
+  const meta = document.pageMetas[page] ?? defaultPageMeta(document.title, options)
+  const hasHeaderMeta = Boolean(meta.title || meta.subtitle)
   const pageBubbles = useMemo(() => document.speechBubbles
     .filter((bubble) => page === 0 && bubble.page === 0)
     .sort((left, right) => left.y - right.y || left.zIndex - right.zIndex), [document.speechBubbles, page])
@@ -1187,8 +1382,9 @@ function DropPage({
 
   const style = {
     "--page-width": `${options.pageWidth}px`,
+    "--page-height": `${options.pageHeight}px`,
     "--page-padding-x": `${(options.paddingX / options.pageWidth) * 100}%`,
-    "--page-padding-y": `${(options.paddingY / (options.pageWidth * 1.414)) * 100}%`,
+    "--page-padding-y": `${(options.paddingY / options.pageHeight) * 100}%`,
     "--page-color": options.textColor,
     "--page-background": options.backgroundColor,
     "--page-font": options.customFont ? `"${options.customFont}", "Noto Serif KR", serif` : `"${options.fontFamily}", "Noto Serif KR", serif`,
@@ -1197,6 +1393,10 @@ function DropPage({
     "--page-line-height": String(options.lineHeight),
     "--page-letter-spacing": `${(options.letterSpacing / options.pageWidth) * 100}cqw`,
     "--page-scale-x": String(options.scaleX),
+    "--page-word-break": options.wordBreak,
+    "--page-copy-top": hasHeaderMeta ? "15%" : `${(options.paddingY / options.pageHeight) * 100}%`,
+    background: pageBackground(appearance),
+    aspectRatio: `${options.pageWidth} / ${options.pageHeight}`,
   } as CSSProperties
 
   const onDrop = (event: DragEvent<HTMLElement>) => {
@@ -1217,6 +1417,26 @@ function DropPage({
       onDrop={onDrop}
     >
       {multiSelected ? <span className="page-selection-badge"><Check aria-hidden="true" /></span> : null}
+      {hasHeaderMeta ? (
+        <header className="page-meta-header">
+          {meta.title ? <strong style={{
+            fontFamily: `"${meta.titleStyle.font}", "Noto Serif KR", serif`,
+            fontSize: `${(meta.titleStyle.size / options.pageWidth) * 100}cqw`,
+            color: meta.titleStyle.color,
+            fontStyle: meta.titleStyle.italic ? "italic" : "normal",
+            fontWeight: meta.titleStyle.bold ? 700 : 400,
+            opacity: meta.titleStyle.opacity,
+          }}>{meta.title}</strong> : null}
+          {meta.subtitle ? <span style={{
+            fontFamily: `"${meta.subtitleStyle.font}", "Noto Serif KR", serif`,
+            fontSize: `${(meta.subtitleStyle.size / options.pageWidth) * 100}cqw`,
+            color: meta.subtitleStyle.color,
+            fontStyle: meta.subtitleStyle.italic ? "italic" : "normal",
+            fontWeight: meta.subtitleStyle.bold ? 700 : 400,
+            opacity: meta.subtitleStyle.opacity,
+          }}>{meta.subtitle}</span> : null}
+        </header>
+      ) : null}
       {children}
       {document.images
         .filter((image) => image.page === page)
@@ -1225,11 +1445,27 @@ function DropPage({
           <ImageItem
             key={image.id}
             layer={image}
+            pageRatio={options.pageHeight / options.pageWidth}
             selected={image.id === selectedImageId}
             transformMode={transformMode}
             onSelect={() => onSelectImage(image.id)}
             onChange={(patch) => onChangeImage(image.id, patch)}
             onDelete={() => onDeleteImage(image.id)}
+            onInteractionStart={onInteractionStart}
+            onInteractionEnd={onInteractionEnd}
+          />
+        ))}
+      {document.stickers
+        .filter((sticker) => sticker.page === page)
+        .sort((left, right) => left.zIndex - right.zIndex)
+        .map((sticker) => (
+          <StickerItem
+            key={sticker.id}
+            sticker={sticker}
+            selected={sticker.id === selectedStickerId}
+            onSelect={() => onSelectSticker(sticker.id)}
+            onChange={(patch) => onChangeSticker(sticker.id, patch)}
+            onDelete={() => onDeleteSticker(sticker.id)}
             onInteractionStart={onInteractionStart}
             onInteractionEnd={onInteractionEnd}
           />
@@ -1262,6 +1498,26 @@ function DropPage({
           <span style={{ fontFamily: `"${document.footers[page].subtitleFont}", "Noto Serif KR", serif` }}>{document.footers[page].subtitle}</span>
         </footer>
       ) : null}
+      {meta.bookName || meta.characterName ? (
+        <div className="page-meta-footer">
+          <span style={{
+            fontFamily: `"${meta.bookNameStyle.font}", "Noto Serif KR", serif`,
+            fontSize: `${(meta.bookNameStyle.size / options.pageWidth) * 100}cqw`,
+            color: meta.bookNameStyle.color,
+            fontStyle: meta.bookNameStyle.italic ? "italic" : "normal",
+            fontWeight: meta.bookNameStyle.bold ? 700 : 400,
+            opacity: meta.bookNameStyle.opacity,
+          }}>{meta.bookName}</span>
+          <span style={{
+            fontFamily: `"${meta.characterNameStyle.font}", "Noto Serif KR", serif`,
+            fontSize: `${(meta.characterNameStyle.size / options.pageWidth) * 100}cqw`,
+            color: meta.characterNameStyle.color,
+            fontStyle: meta.characterNameStyle.italic ? "italic" : "normal",
+            fontWeight: meta.characterNameStyle.bold ? 700 : 400,
+            opacity: meta.characterNameStyle.opacity,
+          }}>{meta.characterName}</span>
+        </div>
+      ) : null}
       {page > 0 ? <span className="page-number">{page}</span> : null}
       <span className="drop-hint">이미지를 여기에 놓기</span>
     </article>
@@ -1292,16 +1548,20 @@ export function BookCanvas(props: Props) {
           document={props.document}
           selectedImageId={props.selectedImageId}
           selectedBubbleId={props.selectedBubbleId}
+          selectedStickerId={props.selectedStickerId}
           transformMode={props.transformMode}
           onSelectPage={(additive) => props.onSelectPage(0, additive)}
           onSelectImage={props.onSelectImage}
           onSelectBubble={props.onSelectBubble}
+          onSelectSticker={props.onSelectSticker}
           onAddImage={(file) => props.onAddImage(file, 0)}
           onChangeImage={props.onChangeImage}
           onDeleteImage={props.onDeleteImage}
           onChangeBubble={props.onChangeBubble}
           onMoveBubble={props.onMoveBubble}
           onDeleteBubble={props.onDeleteBubble}
+          onChangeSticker={props.onChangeSticker}
+          onDeleteSticker={props.onDeleteSticker}
           onMeasureBubbles={props.onMeasureBubbles}
           onInteractionStart={props.onInteractionStart}
           onInteractionEnd={props.onInteractionEnd}
@@ -1338,16 +1598,20 @@ export function BookCanvas(props: Props) {
             document={props.document}
             selectedImageId={props.selectedImageId}
             selectedBubbleId={props.selectedBubbleId}
+            selectedStickerId={props.selectedStickerId}
             transformMode={props.transformMode}
             onSelectPage={(additive) => props.onSelectPage(pageNumber, additive)}
             onSelectImage={props.onSelectImage}
             onSelectBubble={props.onSelectBubble}
+            onSelectSticker={props.onSelectSticker}
             onAddImage={(file) => props.onAddImage(file, pageNumber)}
             onChangeImage={props.onChangeImage}
             onDeleteImage={props.onDeleteImage}
             onChangeBubble={props.onChangeBubble}
             onMoveBubble={props.onMoveBubble}
             onDeleteBubble={props.onDeleteBubble}
+            onChangeSticker={props.onChangeSticker}
+            onDeleteSticker={props.onDeleteSticker}
             onMeasureBubbles={props.onMeasureBubbles}
             onInteractionStart={props.onInteractionStart}
             onInteractionEnd={props.onInteractionEnd}
@@ -1363,20 +1627,24 @@ export function BookCanvas(props: Props) {
               ))}
               dividers={props.document.dividers.filter((divider) => page.blockIds?.includes(divider.id))}
               inlineImages={props.document.inlineImages.filter((image) => page.blockIds?.includes(image.id))}
+              htmlCards={props.document.htmlCards.filter((card) => page.blockIds?.includes(card.id))}
               selectedBubbleId={props.selectedBubbleId}
               selectedDividerId={props.selectedDividerId}
               selectedInlineImageId={props.selectedInlineImageId}
+              selectedHtmlCardId={props.selectedHtmlCardId}
               pendingCaret={pendingCaretPage === index ? props.pendingCaret : null}
               onSelectPage={() => props.onSelectPage(pageNumber)}
               onSelectBubble={props.onSelectBubble}
               onSelectDivider={props.onSelectDivider}
               onSelectInlineImage={props.onSelectInlineImage}
+              onSelectHtmlCard={props.onSelectHtmlCard}
               onChangeBubble={props.onChangeBubble}
               onMoveBubble={props.onMoveBubble}
               onDeleteBubble={props.onDeleteBubble}
               onDeleteDivider={props.onDeleteDivider}
               onChangeInlineImage={props.onChangeInlineImage}
               onDeleteInlineImage={props.onDeleteInlineImage}
+              onDeleteHtmlCard={props.onDeleteHtmlCard}
               onChangePageText={props.onChangePageText}
               onCaretRestored={props.onCaretRestored}
               onSelectText={props.onSelectText}

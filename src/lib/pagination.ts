@@ -1,36 +1,43 @@
 import type { BookOptions, PageSlice, TextMark, TextSelection } from "../types"
 
-const PAGE_RATIO = 1.414
 export const PAGE_BREAK = "\f"
 
 export type FlowBlock = {
   id: string
   anchor: number
   height: number
+  minPage?: number
 }
 
-export function flowInsertionAnchor(page: PageSlice, selection: TextSelection | null, isLastPage: boolean) {
+export function flowInsertionAnchor(page: PageSlice, selection: TextSelection | null, _isLastPage: boolean) {
   const offset = selection?.start
   if (
     offset !== undefined
     && offset >= page.start
-    && (offset < page.end || (isLastPage && offset <= page.end))
+    && offset <= page.end
   ) return offset
   return page.start
 }
 
-export function paginateText(text: string, options: BookOptions, blocks: FlowBlock[] = []): PageSlice[] {
-  let offset = 0
-  return text.split(PAGE_BREAK).flatMap((section, index, sections) => {
-    const pages = paginateSection(section, options, offset, blocks)
-    offset += section.length + (index < sections.length - 1 ? PAGE_BREAK.length : 0)
-    return pages
-  })
+export function flowInsertionPage(selectedPage: number, page: PageSlice | undefined, anchor: number, pageCount: number) {
+  if (selectedPage === 0) return 0
+  return page && anchor >= page.end && selectedPage < pageCount ? selectedPage + 1 : selectedPage
 }
 
-function paginateSection(text: string, options: BookOptions, offset: number, blocks: FlowBlock[]): PageSlice[] {
+export function paginateText(text: string, options: BookOptions, blocks: FlowBlock[] = []): PageSlice[] {
+  let offset = 0
+  const result: PageSlice[] = []
+  text.split(PAGE_BREAK).forEach((section, index, sections) => {
+    const pages = paginateSection(section, options, offset, blocks, result.length)
+    result.push(...pages)
+    offset += section.length + (index < sections.length - 1 ? PAGE_BREAK.length : 0)
+  })
+  return result
+}
+
+function paginateSection(text: string, options: BookOptions, offset: number, blocks: FlowBlock[], pageOffset: number): PageSlice[] {
   const contentWidth = Math.max(120, options.pageWidth - options.paddingX * 2)
-  const pageHeight = options.pageWidth * PAGE_RATIO
+  const pageHeight = Math.max(300, options.pageHeight)
   const lineHeight = options.fontSize * options.lineHeight
   const contentHeight = Math.max(160, pageHeight - options.paddingY - pageHeight * 0.11 - lineHeight * 1.1)
   const lineUnits = Math.max(6, contentWidth / (options.fontSize * options.scaleX))
@@ -51,7 +58,8 @@ function paginateSection(text: string, options: BookOptions, offset: number, blo
 
     while (cursor < text.length || blockIndex < sectionBlocks.length) {
       const block = sectionBlocks[blockIndex]
-      if (block && block.anchor <= offset + cursor) {
+      const currentPage = pageOffset + slices.length + 1
+      if (block && block.anchor <= offset + cursor && (!block.minPage || currentPage >= block.minPage)) {
         if (height + block.height > contentHeight && consumed) break
         height += block.height
         blockIds.push(block.id)
@@ -111,6 +119,7 @@ type TextStyle = {
   fontStyle?: string
   fontWeight?: number
   fontFamily?: string
+  textDecoration?: string
 }
 
 export type DecoratedSlice = {
@@ -132,8 +141,12 @@ export function decoratePage(
         ? { backgroundColor: mark.value }
         : mark.kind === "color"
           ? { color: mark.value }
-          : mark.kind === "italic"
+        : mark.kind === "italic"
             ? { fontStyle: "italic" }
+            : mark.kind === "underline"
+              ? { textDecoration: "underline" }
+              : mark.kind === "strike"
+                ? { textDecoration: "line-through" }
             : mark.kind === "font"
               ? { fontFamily: mark.value }
               : mark.kind === "align"
@@ -143,8 +156,10 @@ export function decoratePage(
 
   const smartRanges: Array<{ start: number; end: number; style: TextStyle }> = []
   const smartDefs = [
-    { expression: /"[^"]+"|“[^”]+”|‘[^’]+’/g, style: { color: options.quoteColor, fontStyle: options.quoteItalic ? "italic" : undefined } },
-    { expression: /\([^)]*\)|\[[^\]]*\]/g, style: { color: options.bracketColor, fontStyle: options.bracketItalic ? "italic" : undefined } },
+    ...(options.smartBold ? [{ expression: /\*\*[^*]+\*\*/g, style: { fontWeight: 700 } }] : []),
+    ...(options.smartAsterisk ? [{ expression: /(?<!\*)\*[^*]+\*(?!\*)/g, style: { color: options.asteriskItalic ? undefined : options.asteriskColor, fontStyle: options.asteriskItalic ? "italic" : undefined } }] : []),
+    ...(options.smartQuote ? [{ expression: /"[^"]+"|“[^”]+”|‘[^’]+’/g, style: { color: options.quoteItalic ? undefined : options.quoteColor, fontStyle: options.quoteItalic ? "italic" : undefined } }] : []),
+    ...(options.smartBracket ? [{ expression: /\([^)]*\)|\[[^\]]*\]/g, style: { color: options.bracketItalic ? undefined : options.bracketColor, fontStyle: options.bracketItalic ? "italic" : undefined } }] : []),
   ]
   smartDefs.forEach(({ expression, style }) => {
     Array.from(body.matchAll(expression)).forEach((match) => {

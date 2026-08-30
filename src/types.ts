@@ -1,7 +1,9 @@
-export type EditorTab = "manuscript" | "book" | "theme" | "image" | "dialogue" | "layout" | "export"
+export type EditorTab = "manuscript" | "book" | "theme" | "image" | "dialogue" | "decorate" | "layout" | "export"
 export type CoverMode = "image-text" | "image" | "text" | "none"
 export type ExportMode = "selected" | "single" | "spread"
-export type MarkKind = "highlight" | "color" | "italic" | "bold" | "font" | "align"
+export type MarkKind = "highlight" | "color" | "italic" | "bold" | "underline" | "strike" | "font" | "align"
+export type PaperPreset = "custom" | "a4" | "a5" | "b6"
+export type BackgroundType = "solid" | "gradient"
 
 export type TextMark = {
   id: string
@@ -9,6 +11,7 @@ export type TextMark = {
   end: number
   kind: MarkKind
   value: string
+  source?: "smart-bold" | "smart-asterisk"
 }
 
 export type TextSelection = {
@@ -24,8 +27,12 @@ export type ImageLayer = {
   x: number
   y: number
   width: number
+  height?: number
+  stretch?: boolean
   rotation: number
   opacity: number
+  grayscale?: boolean
+  overlay?: number
   zIndex: number
   aspectRatio?: number
 }
@@ -40,6 +47,13 @@ export type MemberProfile = {
   avatarY: number
   bubbleColor: string
   textColor: string
+  backgroundColor?: string
+  label?: string
+  labelColor?: string
+  nameColor?: string
+  nameOutline?: boolean
+  nameOutlineColor?: string
+  hideName?: boolean
 }
 
 export type SpeechBubble = {
@@ -60,11 +74,15 @@ export type SpeechBubble = {
   side: "left" | "right"
   bubbleColor: string
   textColor: string
+  nameColor?: string
+  nameOutline?: boolean
+  nameOutlineColor?: string
+  continuation?: boolean
   zIndex: number
   flowRank?: number
 }
 
-export type DividerStyle = "solid" | "dashed" | "diamond" | "dots"
+export type DividerStyle = "solid" | "dashed" | "diamond" | "dots" | "asterism" | "wave"
 
 export type DividerBlock = {
   id: string
@@ -81,11 +99,74 @@ export type InlineImageBlock = {
   name: string
   width: number
   aspectRatio: number
+  height?: number
+  opacity?: number
   scale: number
   x: number
   y: number
   align: "left" | "center" | "right"
   order: number
+}
+
+export type HtmlCardBlock = {
+  id: string
+  anchor: number
+  html: string
+  width: number
+  scale: number
+  align: "left" | "center" | "right"
+  order: number
+}
+
+export type StickerKind = "heart" | "star" | "sparkle" | "flower" | "smile" | "leaf" | "moon" | "custom"
+
+export type StickerLayer = {
+  id: string
+  page: number
+  kind: StickerKind
+  src?: string
+  name: string
+  x: number
+  y: number
+  size: number
+  rotation: number
+  flipped: boolean
+  color: string
+  zIndex: number
+}
+
+export type StickerAsset = {
+  id: string
+  name: string
+  src: string
+}
+
+export type PageAppearance = {
+  backgroundType: BackgroundType
+  backgroundColor: string
+  gradientStart: string
+  gradientEnd: string
+  gradientAngle: number
+}
+
+export type TextMetaStyle = {
+  font: string
+  size: number
+  color: string
+  italic: boolean
+  bold: boolean
+  opacity: number
+}
+
+export type PageMeta = {
+  title: string
+  subtitle: string
+  bookName: string
+  characterName: string
+  titleStyle: TextMetaStyle
+  subtitleStyle: TextMetaStyle
+  bookNameStyle: TextMetaStyle
+  characterNameStyle: TextMetaStyle
 }
 
 export type FooterNote = {
@@ -100,7 +181,9 @@ export type FooterNote = {
 
 export type BookOptions = {
   themeId: string
+  paperPreset: PaperPreset
   pageWidth: number
+  pageHeight: number
   paddingX: number
   paddingY: number
   fontFamily: string
@@ -112,13 +195,24 @@ export type BookOptions = {
   paragraphSpacing: number
   scaleX: number
   defaultTextAlign: "left" | "center" | "right" | "justify"
+  wordBreak: "keep-all" | "break-all"
   textColor: string
   backgroundColor: string
+  backgroundType: BackgroundType
+  gradientStart: string
+  gradientEnd: string
+  gradientAngle: number
   pageTexture: string
   quoteColor: string
+  smartQuote: boolean
   quoteItalic: boolean
   bracketColor: string
+  smartBracket: boolean
   bracketItalic: boolean
+  smartBold: boolean
+  smartAsterisk: boolean
+  asteriskColor: string
+  asteriskItalic: boolean
   accentColors: [string, string, string]
   highlightColor: string
   highlightOpacity: number
@@ -142,8 +236,13 @@ export type BookDocument = {
   speechBubbles: SpeechBubble[]
   dividers: DividerBlock[]
   inlineImages: InlineImageBlock[]
+  htmlCards: HtmlCardBlock[]
+  stickers: StickerLayer[]
+  stickerAssets: StickerAsset[]
   marks: TextMark[]
   footers: Record<number, FooterNote>
+  pageAppearances: Record<number, PageAppearance>
+  pageMetas: Record<number, PageMeta>
   updatedAt: string
 }
 

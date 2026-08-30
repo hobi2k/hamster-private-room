@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { DEFAULT_OPTIONS } from "../data/themes"
 import type { TextMark } from "../types"
-import { decoratePage, flowInsertionAnchor, PAGE_BREAK, paginateText } from "./pagination"
+import { decoratePage, flowInsertionAnchor, flowInsertionPage, PAGE_BREAK, paginateText } from "./pagination"
 
 describe("paginateText", () => {
   it("keeps short text on a single page", () => {
@@ -26,6 +26,23 @@ describe("paginateText", () => {
     const joined = pages.map((page) => body.slice(page.start, page.end)).join("")
     expect(joined).toBe(body)
   })
+
+  it("uses the configured free page height as the pagination boundary", () => {
+    const body = "가".repeat(2400)
+    const short = paginateText(body, { ...DEFAULT_OPTIONS, pageHeight: 420 })
+    const tall = paginateText(body, { ...DEFAULT_OPTIONS, pageHeight: 1200 })
+    expect(short.length).toBeGreaterThan(tall.length)
+  })
+
+  it("does not let a flow block drift before its selected page", () => {
+    const body = "가".repeat(1800)
+    const baseline = paginateText(body, DEFAULT_OPTIONS)
+    const boundary = baseline[0].end
+    const pages = paginateText(body, DEFAULT_OPTIONS, [{ id: "bubble", anchor: boundary, height: 120, minPage: 2 }])
+    expect(pages[0].blockIds).not.toContain("bubble")
+    expect(pages[1].blockIds).toContain("bubble")
+    expect(pages[1].text.length).toBeGreaterThan(0)
+  })
 })
 
 describe("flowInsertionAnchor", () => {
@@ -35,13 +52,22 @@ describe("flowInsertionAnchor", () => {
     expect(flowInsertionAnchor(page, { start: 124, end: 124 }, false)).toBe(124)
   })
 
-  it("falls back inside the selected page instead of its next-page boundary", () => {
+  it("keeps an end-of-page caret so a flow block can begin the next page", () => {
     expect(flowInsertionAnchor(page, null, false)).toBe(100)
-    expect(flowInsertionAnchor(page, { start: 160, end: 160 }, false)).toBe(100)
+    expect(flowInsertionAnchor(page, { start: 160, end: 160 }, false)).toBe(160)
   })
 
   it("keeps the document-end caret on the final page", () => {
     expect(flowInsertionAnchor(page, { start: 160, end: 160 }, true)).toBe(160)
+  })
+})
+
+describe("flowInsertionPage", () => {
+  it("places a block after a non-final page when the caret is at its end", () => {
+    const page = { text: "첫 페이지", start: 0, end: 100 }
+    expect(flowInsertionPage(1, page, 100, 3)).toBe(2)
+    expect(flowInsertionPage(1, page, 99, 3)).toBe(1)
+    expect(flowInsertionPage(3, { ...page, start: 200, end: 300 }, 300, 3)).toBe(3)
   })
 })
 
@@ -64,6 +90,17 @@ describe("decoratePage mark handling", () => {
     const plain = slices.find((slice) => slice.text.startsWith("가나"))
     expect(styled?.style.fontFamily).toBe("Pretendard")
     expect(plain?.style.fontFamily).toBeUndefined()
+  })
+
+  it("renders underline and strike marks as text decoration", () => {
+    const body = "밑줄취소"
+    const marks: TextMark[] = [
+      { id: "u", start: 0, end: 2, kind: "underline", value: "underline" },
+      { id: "s", start: 2, end: 4, kind: "strike", value: "line-through" },
+    ]
+    const slices = decoratePage(body, page(body), marks, DEFAULT_OPTIONS)
+    expect(slices[0].style.textDecoration).toBe("underline")
+    expect(slices[1].style.textDecoration).toBe("line-through")
   })
 
   it("does not extend highlight or color into the sentence before the selected range", () => {

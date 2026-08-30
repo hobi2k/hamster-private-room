@@ -7,6 +7,7 @@ import {
   MessageCircleMore,
   Palette,
   Redo2,
+  Sparkles,
   Undo2,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -18,6 +19,7 @@ const TOOLS: Array<{ id: EditorTab; label: string; icon: LucideIcon }> = [
   { id: "theme", label: "테마", icon: Palette },
   { id: "image", label: "이미지", icon: ImagePlus },
   { id: "dialogue", label: "말풍선", icon: MessageCircleMore },
+  { id: "decorate", label: "꾸미기", icon: Sparkles },
   { id: "layout", label: "지면", icon: LayoutTemplate },
   { id: "export", label: "내보내기", icon: Download },
 ]
@@ -33,7 +35,7 @@ type Props = {
 
 export function ToolRail({ active, canUndo, canRedo, onSelect, onUndo, onRedo }: Props) {
   return (
-    <nav className="tool-rail" aria-label="편집 도구">
+    <nav className="tool-rail" aria-label="편집 도구" data-preserve-page-selection>
       <div className="brand-mark" aria-label="햄스터의 집">
         <span className="burrow-mark"><i /></span>
       </div>

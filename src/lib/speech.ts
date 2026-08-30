@@ -103,7 +103,7 @@ export function resolveSpeechBubbleTops(items: VerticalLayoutItem[]) {
 }
 
 export function estimateSpeechBubbleHeight(bubble: SpeechBubble, profile: MemberProfile | undefined, options: BookOptions) {
-  const hasAvatar = Boolean(profile?.avatar)
+  const hasAvatar = Boolean(profile) && !bubble.continuation
   const name = profile?.name ?? bubble.speakerName
   // Honour a manual width, matching what BookCanvas actually renders, so the
   // reserved height doesn't diverge from the real (narrower) card.
@@ -118,7 +118,7 @@ export function estimateSpeechBubbleHeight(bubble: SpeechBubble, profile: Member
     const units = Array.from(line).reduce((sum, character) => sum + (character === " " ? 0.36 : /[\x00-\x7F]/.test(character) ? 0.58 : 1), 0)
     return total + Math.max(1, Math.ceil((units * size) / Math.max(size * 4, cardWidth - horizontalPadding)))
   }, 0)
-  const nameHeight = name && bubble.showName !== false ? options.pageWidth * 0.038 : 0
+  const nameHeight = name && bubble.showName !== false && !profile?.hideName && !bubble.continuation ? options.pageWidth * 0.038 : 0
   const messageHeight = lineCount(bubble.text, messageSize) * messageSize * 1.35
   const secondaryHeight = bubble.secondaryText ? lineCount(bubble.secondaryText, secondarySize) * secondarySize * 1.35 + options.pageWidth * 0.012 : 0
   const cardHeight = Math.max(options.pageWidth * 0.1, options.pageWidth * 0.057 + nameHeight + messageHeight + secondaryHeight)

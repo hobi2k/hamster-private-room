@@ -21,8 +21,11 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Sparkles,
+  Strikethrough,
   Trash2,
   Type,
+  Underline,
   UserPlus,
   UserRound,
   X,
@@ -33,6 +36,8 @@ import { DEFAULT_OPTIONS, THEMES } from "../data/themes"
 import { avatarFrame, avatarStyle, clampAvatarCenter } from "../lib/avatar"
 import { resolveFlowTextSelection } from "../lib/domText"
 import { fitImageToPage } from "../lib/image"
+import { sanitizeHtml } from "../lib/html"
+import { pageHeightForPreset } from "../lib/page"
 import type {
   BookDocument,
   BookOptions,
@@ -41,11 +46,16 @@ import type {
   EditorTab,
   ExportMode,
   FooterNote,
+  HtmlCardBlock,
   ImageLayer,
   InlineImageBlock,
   MarkKind,
   MemberProfile,
+  PageAppearance,
+  PageMeta,
   SpeechBubble,
+  StickerKind,
+  StickerLayer,
   TextSelection,
   ThemePreset,
 } from "../types"
@@ -60,6 +70,10 @@ type Props = {
   selectedBubble: SpeechBubble | null
   selectedDivider: DividerBlock | null
   selectedInlineImage: InlineImageBlock | null
+  selectedHtmlCard: HtmlCardBlock | null
+  selectedSticker: StickerLayer | null
+  currentPageAppearance: PageAppearance
+  currentPageMeta: PageMeta
   textSelection: TextSelection | null
   members: MemberProfile[]
   customPresets: ThemePreset[]
@@ -80,14 +94,24 @@ type Props = {
   onAddInlineImage: (file: File) => void
   onPatchInlineImage: (patch: Partial<InlineImageBlock>, transient?: boolean) => void
   onDeleteInlineImage: () => void
+  onAddHtmlCard: (html: string) => void
+  onPatchHtmlCard: (patch: Partial<HtmlCardBlock>, transient?: boolean) => void
+  onDeleteHtmlCard: () => void
+  onAddSticker: (kind: StickerKind, assetId?: string) => void
+  onUploadStickerAsset: (file: File) => void
+  onDeleteStickerAsset: (id: string) => void
+  onPatchSticker: (patch: Partial<StickerLayer>, transient?: boolean) => void
+  onDeleteSticker: () => void
   onAddMember: () => string
   onPatchMember: (id: string, patch: Partial<MemberProfile>, transient?: boolean) => void
   onSetMemberAvatar: (id: string, file: File) => void
+  onSetMemberAvatarUrl: (id: string, url: string) => void
   onDeleteMemberAvatar: (id: string) => void
   onDeleteMember: (id: string) => void
   onAddBubble: (profileId: string, text: string, secondaryText: string, side: SpeechBubble["side"]) => void
   onPatchBubble: (patch: Partial<SpeechBubble>) => void
   onMoveBubble: (direction: -1 | 1) => void
+  onInsertTextBeforeBubble: () => void
   onInsertTextAfterBubble: () => void
   onDeleteBubble: () => void
   onAddDivider: (style: DividerStyle, color: string) => void
@@ -96,8 +120,13 @@ type Props = {
   onPatchFooter: (patch: Partial<FooterNote>) => void
   onApplyFooterAll: () => void
   onDeleteFooter: (all: boolean) => void
+  onPatchPageAppearance: (patch: Partial<PageAppearance>, scope: "selected" | "all") => void
+  onPatchPageMeta: (patch: Partial<PageMeta>, scope: "selected" | "all") => void
+  onFitPageHeight: () => void
   onExport: (mode: ExportMode) => void
   onCopyPage: () => void
+  onSelectAllPages: () => void
+  onSelectCurrentPage: () => void
   onSaveTemporary: () => void
   onDownloadProject: () => void
   onImportProject: (file: File) => void
@@ -112,6 +141,7 @@ function PanelHeader({ title, onReset }: { title: string; onReset?: () => void }
     : title.startsWith("전체 테마") ? "이불 고르기"
       : title.startsWith("이미지") ? "사진 붙이기"
         : title.startsWith("말풍선") ? "수다 떨기"
+          : title.startsWith("스티커") ? "다이어리 꾸미기"
           : title.startsWith("지면") ? "폭신하게"
             : title.startsWith("페이지 꼬리말") ? "발도장 남기기"
               : "굴 밖으로"
@@ -394,6 +424,12 @@ function ManuscriptPanel(props: Props) {
             <button className={hasSelectionMark("italic", "italic") ? "is-active" : ""} type="button" onClick={() => addSelectionMark("italic", "italic")} title="기울임">
               <Italic aria-hidden="true" />
             </button>
+            <button className={hasSelectionMark("underline", "underline") ? "is-active" : ""} type="button" onClick={() => addSelectionMark("underline", "underline")} title="밑줄">
+              <Underline aria-hidden="true" />
+            </button>
+            <button className={hasSelectionMark("strike", "line-through") ? "is-active" : ""} type="button" onClick={() => addSelectionMark("strike", "line-through")} title="취소선">
+              <Strikethrough aria-hidden="true" />
+            </button>
             {options.accentColors.map((color, index) => (
               <button
                 className={`swatch-button${hasSelectionMark("color", color) ? " is-active" : ""}`}
@@ -535,18 +571,20 @@ function ManuscriptPanel(props: Props) {
 
         <Section title="구분선" open={false}>
           <div className="divider-style-grid" role="group" aria-label="구분선 모양">
-            {(["solid", "dashed", "diamond", "dots"] as DividerStyle[]).map((style) => (
+            {(["solid", "dashed", "diamond", "dots", "asterism", "wave"] as DividerStyle[]).map((style) => (
               <button
                 className={dividerStyle === style ? `divider-style-button style-${style} is-active` : `divider-style-button style-${style}`}
                 type="button"
                 key={style}
                 onClick={() => setDividerStyle(style)}
-                title={style === "solid" ? "실선" : style === "dashed" ? "점선" : style === "diamond" ? "다이아" : "점 장식"}
-                aria-label={style === "solid" ? "실선" : style === "dashed" ? "점선" : style === "diamond" ? "다이아" : "점 장식"}
+                title={style === "solid" ? "실선" : style === "dashed" ? "점선" : style === "diamond" ? "다이아" : style === "asterism" ? "별 장식" : style === "wave" ? "물결" : "점 장식"}
+                aria-label={style === "solid" ? "실선" : style === "dashed" ? "점선" : style === "diamond" ? "다이아" : style === "asterism" ? "별 장식" : style === "wave" ? "물결" : "점 장식"}
               >
                 <span />
                 {style === "diamond" ? <i>◆ ◆ ◆</i> : null}
                 {style === "dots" ? <i>● ● ●</i> : null}
+                {style === "asterism" ? <i>✦ ✦ ✦</i> : null}
+                {style === "wave" ? <i>〜 〜 〜</i> : null}
               </button>
             ))}
           </div>
@@ -563,6 +601,8 @@ function ManuscriptPanel(props: Props) {
                   <option value="dashed">점선</option>
                   <option value="diamond">다이아</option>
                   <option value="dots">점 장식</option>
+                  <option value="asterism">별 장식</option>
+                  <option value="wave">물결 장식</option>
                 </select>
               </Field>
               <ColorInput label="색" value={props.selectedDivider.color} onChange={(color) => props.onPatchDivider({ color })} />
@@ -574,6 +614,26 @@ function ManuscriptPanel(props: Props) {
         </Section>
 
         <Section title="스마트 하이라이트" open={false}>
+          <label className="toggle-row">
+            <input type="checkbox" checked={options.smartBold} onChange={(event) => props.onPatchOptions({ smartBold: event.target.checked })} />
+            <span><b>**텍스트**</b> 자동 굵게</span>
+          </label>
+          <label className="toggle-row">
+            <input type="checkbox" checked={options.smartAsterisk} onChange={(event) => props.onPatchOptions({ smartAsterisk: event.target.checked })} />
+            <span><i>*텍스트*</i> 자동 강조</span>
+          </label>
+          <div className="two-column-fields">
+            <ColorInput label="별표 강조" value={options.asteriskColor} onChange={(asteriskColor) => props.onPatchOptions({ asteriskColor })} />
+            <label className="toggle-row"><input type="checkbox" checked={options.asteriskItalic} onChange={(event) => props.onPatchOptions({ asteriskItalic: event.target.checked })} /><span>기울임</span></label>
+          </div>
+          <label className="toggle-row">
+            <input type="checkbox" checked={options.smartQuote} onChange={(event) => props.onPatchOptions({ smartQuote: event.target.checked })} />
+            <span>따옴표 자동 서식</span>
+          </label>
+          <label className="toggle-row">
+            <input type="checkbox" checked={options.smartBracket} onChange={(event) => props.onPatchOptions({ smartBracket: event.target.checked })} />
+            <span>괄호 자동 서식</span>
+          </label>
           <div className="two-column-fields">
             <ColorInput label={'"인용"'} value={options.quoteColor} onChange={(quoteColor) => props.onPatchOptions({ quoteColor })} />
             <ColorInput label="(괄호)" value={options.bracketColor} onChange={(bracketColor) => props.onPatchOptions({ bracketColor })} />
@@ -603,6 +663,8 @@ function ManuscriptPanel(props: Props) {
                 <button className={props.selectedInlineImage.align === "right" ? "is-active" : ""} type="button" onClick={() => props.onPatchInlineImage({ align: "right" })} title="오른쪽 정렬"><AlignRight aria-hidden="true" /></button>
               </div>
               <RangeField label="표시 너비" min={24} max={100} value={props.selectedInlineImage.width} suffix="%" onChange={(width) => props.onPatchInlineImage({ width })} />
+              <RangeField label="틀 높이" min={80} max={700} value={props.selectedInlineImage.height ?? 260} suffix="px" onChange={(height) => props.onPatchInlineImage({ height })} />
+              <RangeField label="투명도" min={0.1} max={1} step={0.05} value={props.selectedInlineImage.opacity ?? 1} onChange={(opacity) => props.onPatchInlineImage({ opacity })} />
               <RangeField label="사진 확대" min={100} max={400} value={props.selectedInlineImage.scale} suffix="%" onChange={(scale) => props.onPatchInlineImage({ scale })} />
               <RangeField label="가로 초점" min={0} max={100} value={props.selectedInlineImage.x} suffix="%" onChange={(x) => props.onPatchInlineImage({ x })} />
               <RangeField label="세로 초점" min={0} max={100} value={props.selectedInlineImage.y} suffix="%" onChange={(y) => props.onPatchInlineImage({ y })} />
@@ -689,10 +751,58 @@ function ThemePanel(props: Props) {
 
 function ImagePanel(props: Props) {
   const image = props.selectedImage
+  const [backgroundScope, setBackgroundScope] = useState<"selected" | "all">("selected")
+  const [imageFit, setImageFit] = useState<"cover" | "contain" | "fill">("cover")
+  const [imagePosition, setImagePosition] = useState<"top" | "center" | "bottom">("center")
+  const background = props.currentPageAppearance
+  const applyImageFit = (fit = imageFit, position = imagePosition) => {
+    if (!image) return
+    const ratio = props.document.options.pageHeight / props.document.options.pageWidth
+    if (fit === "fill") {
+      props.onPatchImage({ x: 0, y: 0, width: 100, height: 100, rotation: 0, stretch: true })
+      return
+    }
+    const aspect = Math.max(0.1, image.aspectRatio ?? 1)
+    const fitted = fit === "cover"
+      ? fitImageToPage(aspect, ratio)
+      : (() => {
+        const width = Math.min(100, aspect * ratio * 100)
+        const height = width / (aspect * ratio)
+        return { width, x: (100 - width) / 2, y: (100 - height) / 2, rotation: 0 }
+      })()
+    const height = fitted.width / (aspect * ratio)
+    const y = position === "top" ? 0 : position === "bottom" ? 100 - height : (100 - height) / 2
+    props.onPatchImage({ ...fitted, y, height: undefined, stretch: false })
+  }
   return (
     <>
       <PanelHeader title={`이미지 레이어 · ${props.selectedPage}쪽`} />
       <div className="panel-scroll">
+        <Section title="페이지 배경">
+          <Field label="적용 대상">
+            <select value={backgroundScope} onChange={(event) => setBackgroundScope(event.target.value as "selected" | "all")}>
+              <option value="selected">선택한 페이지만</option>
+              <option value="all">모든 페이지</option>
+            </select>
+          </Field>
+          <Field label="배경 유형">
+            <select value={background.backgroundType} onChange={(event) => props.onPatchPageAppearance({ backgroundType: event.target.value as PageAppearance["backgroundType"] }, backgroundScope)}>
+              <option value="solid">단색</option>
+              <option value="gradient">그라데이션</option>
+            </select>
+          </Field>
+          {background.backgroundType === "solid" ? (
+            <ColorInput label="배경색" value={background.backgroundColor} onChange={(backgroundColor) => props.onPatchPageAppearance({ backgroundColor }, backgroundScope)} />
+          ) : (
+            <>
+              <div className="two-column-fields">
+                <ColorInput label="시작색" value={background.gradientStart} onChange={(gradientStart) => props.onPatchPageAppearance({ gradientStart }, backgroundScope)} />
+                <ColorInput label="끝색" value={background.gradientEnd} onChange={(gradientEnd) => props.onPatchPageAppearance({ gradientEnd }, backgroundScope)} />
+              </div>
+              <RangeField label="그라데이션 방향" min={0} max={360} value={background.gradientAngle} suffix="°" onChange={(gradientAngle) => props.onPatchPageAppearance({ gradientAngle }, backgroundScope)} />
+            </>
+          )}
+        </Section>
         <label className="image-drop-zone">
           <ImagePlus aria-hidden="true" />
           <strong>이미지 추가</strong>
@@ -702,14 +812,30 @@ function ImagePanel(props: Props) {
         {image ? (
           <Section title={image.name}>
             <p className="shortcut-note"><kbd>Ctrl</kbd> + <kbd>T</kbd>로 캔버스 변형 핸들을 켤 수 있습니다.</p>
-            <button className="primary-button" type="button" onClick={() => props.onPatchImage(fitImageToPage(image.aspectRatio ?? 1))}>
+            <button className="primary-button" type="button" onClick={() => applyImageFit("cover", imagePosition)}>
               <ImagePlus aria-hidden="true" /> 페이지 가득 채우기
             </button>
+            <Field label="이미지 채우기 방식">
+              <select value={imageFit} onChange={(event) => { const fit = event.target.value as typeof imageFit; setImageFit(fit); applyImageFit(fit, imagePosition) }}>
+                <option value="cover">꽉 채우기</option>
+                <option value="contain">원본 비율 맞추기</option>
+                <option value="fill">강제로 늘리기</option>
+              </select>
+            </Field>
+            <Field label="초기 세로 위치">
+              <select value={imagePosition} onChange={(event) => { const position = event.target.value as typeof imagePosition; setImagePosition(position); applyImageFit(imageFit, position) }}>
+                <option value="top">상단</option>
+                <option value="center">중앙</option>
+                <option value="bottom">하단</option>
+              </select>
+            </Field>
             <RangeField label="가로 위치" min={-500} max={100} value={image.x} suffix="%" onChange={(x) => props.onPatchImage({ x })} />
             <RangeField label="세로 위치" min={-500} max={100} value={image.y} suffix="%" onChange={(y) => props.onPatchImage({ y })} />
             <RangeField label="크기" min={8} max={500} value={image.width} suffix="%" onChange={(width) => props.onPatchImage({ width })} />
             <RangeField label="회전" min={-180} max={180} value={image.rotation} suffix="°" onChange={(rotation) => props.onPatchImage({ rotation })} />
             <RangeField label="투명도" min={0.05} max={1} step={0.05} value={image.opacity} onChange={(opacity) => props.onPatchImage({ opacity })} />
+            <label className="toggle-row"><input type="checkbox" checked={image.grayscale ?? false} onChange={(event) => props.onPatchImage({ grayscale: event.target.checked })} /><span>흑백 모드</span></label>
+            <RangeField label="다크 오버레이" min={0} max={0.9} step={0.05} value={image.overlay ?? 0} onChange={(overlay) => props.onPatchImage({ overlay })} />
             <button className="danger-button" type="button" onClick={props.onDeleteImage}>
               <Trash2 aria-hidden="true" /> 이미지 삭제
             </button>
@@ -731,6 +857,7 @@ function DialoguePanel(props: Props) {
   const [message, setMessage] = useState("")
   const [secondaryText, setSecondaryText] = useState("")
   const [side, setSide] = useState<SpeechBubble["side"]>("left")
+  const [avatarUrl, setAvatarUrl] = useState("")
   const selectedMember = props.members.find((member) => member.id === selectedMemberId) ?? null
 
   useEffect(() => {
@@ -798,11 +925,23 @@ function DialoguePanel(props: Props) {
               <ColorInput label="말풍선" value={selectedMember.bubbleColor} onChange={(bubbleColor) => props.onPatchMember(selectedMember.id, { bubbleColor })} />
               <ColorInput label="글자" value={selectedMember.textColor} onChange={(textColor) => props.onPatchMember(selectedMember.id, { textColor })} />
             </div>
+            <div className="two-column-fields">
+              <ColorInput label="이름색" value={selectedMember.nameColor ?? selectedMember.textColor} onChange={(nameColor) => props.onPatchMember(selectedMember.id, { nameColor })} />
+              <ColorInput label="이름 테두리" value={selectedMember.nameOutlineColor ?? "#ffffff"} onChange={(nameOutlineColor) => props.onPatchMember(selectedMember.id, { nameOutlineColor })} />
+            </div>
+            <label className="toggle-row"><input type="checkbox" checked={selectedMember.nameOutline ?? false} onChange={(event) => props.onPatchMember(selectedMember.id, { nameOutline: event.target.checked })} /><span>이름 외곽선</span></label>
+            <label className="toggle-row"><input type="checkbox" checked={selectedMember.hideName ?? false} onChange={(event) => props.onPatchMember(selectedMember.id, { hideName: event.target.checked })} /><span>이름 숨기기</span></label>
             <label className="file-button">
               <Camera aria-hidden="true" />
               <span>{selectedMember.avatar ? "프로필 사진 바꾸기" : "프로필 사진 추가"}</span>
               <input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && props.onSetMemberAvatar(selectedMember.id, event.target.files[0])} />
             </label>
+            <Field label="이미지 URL">
+              <div className="field-action-row">
+                <input value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value)} placeholder="https://..." />
+                <button type="button" className="secondary-button" onClick={() => props.onSetMemberAvatarUrl(selectedMember.id, avatarUrl)}>불러오기</button>
+              </div>
+            </Field>
             {selectedMember.avatar ? (
               <>
                 <AvatarCropper member={selectedMember} onChange={(patch) => props.onPatchMember(selectedMember.id, patch)} />
@@ -810,7 +949,15 @@ function DialoguePanel(props: Props) {
                   <Trash2 aria-hidden="true" /> 사진만 삭제
                 </button>
               </>
-            ) : null}
+            ) : (
+              <>
+                <div className="two-column-fields">
+                  <ColorInput label="프로필 배경" value={selectedMember.backgroundColor ?? "#ffffff"} onChange={(backgroundColor) => props.onPatchMember(selectedMember.id, { backgroundColor })} />
+                  <ColorInput label="이니셜 색" value={selectedMember.labelColor ?? "#777777"} onChange={(labelColor) => props.onPatchMember(selectedMember.id, { labelColor })} />
+                </div>
+                <Field label="프로필 글자"><input maxLength={4} value={selectedMember.label ?? ""} onChange={(event) => props.onPatchMember(selectedMember.id, { label: event.target.value })} /></Field>
+              </>
+            )}
             <button className="danger-button" type="button" onClick={() => props.onDeleteMember(selectedMember.id)}>
               <Trash2 aria-hidden="true" /> 멤버 삭제
             </button>
@@ -867,9 +1014,14 @@ function DialoguePanel(props: Props) {
               </button>
             </div>
             {props.selectedBubble.page > 0 ? (
-              <button className="secondary-button" type="button" onClick={props.onInsertTextAfterBubble} title="이 말풍선 뒤에 본문 글을 써 넣어요">
-                <Type aria-hidden="true" /> 말풍선 사이에 글 넣기
-              </button>
+              <div className="bubble-move-buttons">
+                <button className="secondary-button" type="button" onClick={props.onInsertTextBeforeBubble} title="이 말풍선 앞에 본문 글을 써 넣어요">
+                  <Type aria-hidden="true" /> 앞에 글
+                </button>
+                <button className="secondary-button" type="button" onClick={props.onInsertTextAfterBubble} title="이 말풍선 뒤에 본문 글을 써 넣어요">
+                  <Type aria-hidden="true" /> 뒤에 글
+                </button>
+              </div>
             ) : null}
             <label className="toggle-row">
               <input
@@ -908,6 +1060,21 @@ function DialoguePanel(props: Props) {
               />
               <span>이름 표시</span>
             </label>
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={props.selectedBubble.continuation ?? false}
+                onChange={(event) => props.onPatchBubble({ continuation: event.target.checked })}
+              />
+              <span>이어 말풍선 (프로필·꼬리 숨김)</span>
+            </label>
+            <div className="two-column-fields">
+              <ColorInput label="말풍선" value={props.selectedBubble.bubbleColor} onChange={(bubbleColor) => props.onPatchBubble({ bubbleColor })} />
+              <ColorInput label="대사" value={props.selectedBubble.textColor} onChange={(textColor) => props.onPatchBubble({ textColor })} />
+              <ColorInput label="이름" value={props.selectedBubble.nameColor ?? props.selectedBubble.textColor} onChange={(nameColor) => props.onPatchBubble({ nameColor })} />
+              <ColorInput label="이름 테두리" value={props.selectedBubble.nameOutlineColor ?? "#ffffff"} onChange={(nameOutlineColor) => props.onPatchBubble({ nameOutlineColor })} />
+            </div>
+            <label className="toggle-row"><input type="checkbox" checked={props.selectedBubble.nameOutline ?? false} onChange={(event) => props.onPatchBubble({ nameOutline: event.target.checked })} /><span>이름 외곽선</span></label>
             <Field label="프로필 위치">
               <select value={props.selectedBubble.side} onChange={(event) => props.onPatchBubble({ side: event.target.value as SpeechBubble["side"] })}>
                 <option value="left">왼쪽</option>
@@ -923,6 +1090,79 @@ function DialoguePanel(props: Props) {
           </Section>
         ) : null}
 
+      </div>
+    </>
+  )
+}
+
+const BUILTIN_STICKERS: Array<{ kind: StickerKind; label: string; glyph: string }> = [
+  { kind: "heart", label: "하트", glyph: "♡" },
+  { kind: "star", label: "별", glyph: "☆" },
+  { kind: "sparkle", label: "반짝이", glyph: "✦" },
+  { kind: "flower", label: "꽃", glyph: "❀" },
+  { kind: "smile", label: "스마일", glyph: "☺" },
+  { kind: "leaf", label: "잎", glyph: "♧" },
+  { kind: "moon", label: "달", glyph: "☾" },
+]
+
+function DecoratePanel(props: Props) {
+  const [html, setHtml] = useState("")
+  const preview = useMemo(() => sanitizeHtml(html), [html])
+  return (
+    <>
+      <PanelHeader title={`스티커·HTML 카드 · ${props.selectedPage}쪽`} />
+      <div className="panel-scroll">
+        <Section title="스티커">
+          <p className="section-note">누르면 현재 페이지 가운데에 붙어요. 페이지에서 끌어 이동하고 손잡이로 크기를 바꿀 수 있습니다.</p>
+          <div className="sticker-picker-grid">
+            {BUILTIN_STICKERS.map((item) => (
+              <button type="button" key={item.kind} onClick={() => props.onAddSticker(item.kind)} title={item.label}>
+                <span>{item.glyph}</span><small>{item.label}</small>
+              </button>
+            ))}
+          </div>
+          <label className="file-button"><Sparkles aria-hidden="true" /><span>내 PNG·WebP 스티커 올리기</span><input type="file" accept="image/png,image/webp,image/gif" onChange={(event) => event.target.files?.[0] && props.onUploadStickerAsset(event.target.files[0])} /></label>
+          {props.document.stickerAssets.length ? (
+            <div className="custom-sticker-list">
+              {props.document.stickerAssets.map((asset) => (
+                <div key={asset.id}>
+                  <button type="button" onClick={() => props.onAddSticker("custom", asset.id)}><img src={asset.src} alt={asset.name} /></button>
+                  <button type="button" className="asset-delete" onClick={() => props.onDeleteStickerAsset(asset.id)} title="팔레트에서 삭제"><X aria-hidden="true" /></button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {props.selectedSticker ? (
+            <div className="selected-decoration-controls">
+              <strong>선택한 스티커</strong>
+              {props.selectedSticker.kind !== "custom" ? <ColorInput label="색" value={props.selectedSticker.color} onChange={(color) => props.onPatchSticker({ color })} /> : null}
+              <RangeField label="크기" min={24} max={220} value={props.selectedSticker.size} suffix="px" onChange={(size) => props.onPatchSticker({ size })} />
+              <RangeField label="회전" min={-180} max={180} value={props.selectedSticker.rotation} suffix="°" onChange={(rotation) => props.onPatchSticker({ rotation })} />
+              <label className="toggle-row"><input type="checkbox" checked={props.selectedSticker.flipped} onChange={(event) => props.onPatchSticker({ flipped: event.target.checked })} /><span>좌우 반전</span></label>
+              <button className="danger-button" type="button" onClick={props.onDeleteSticker}><Trash2 aria-hidden="true" /> 스티커 삭제</button>
+            </div>
+          ) : null}
+        </Section>
+        <Section title="HTML 카드">
+          <Field label="HTML 코드" hint="script·이벤트 속성·위험한 URL은 자동 제거됩니다.">
+            <textarea className="html-card-input" value={html} onChange={(event) => setHtml(event.target.value)} placeholder="<div style='padding:20px'>...</div>" />
+          </Field>
+          {preview ? <div className="html-card-preview" dangerouslySetInnerHTML={{ __html: preview }} /> : null}
+          <button className="primary-button" type="button" onClick={() => { props.onAddHtmlCard(html); setHtml("") }} disabled={!preview}>커서 위치에 카드 넣기</button>
+          {props.selectedHtmlCard ? (
+            <div className="selected-decoration-controls">
+              <strong>선택한 HTML 카드</strong>
+              <div className="selection-toolbar" role="group" aria-label="HTML 카드 정렬">
+                <button className={props.selectedHtmlCard.align === "left" ? "is-active" : ""} type="button" onClick={() => props.onPatchHtmlCard({ align: "left" })}><AlignLeft aria-hidden="true" /></button>
+                <button className={props.selectedHtmlCard.align === "center" ? "is-active" : ""} type="button" onClick={() => props.onPatchHtmlCard({ align: "center" })}><AlignCenter aria-hidden="true" /></button>
+                <button className={props.selectedHtmlCard.align === "right" ? "is-active" : ""} type="button" onClick={() => props.onPatchHtmlCard({ align: "right" })}><AlignRight aria-hidden="true" /></button>
+              </div>
+              <RangeField label="틀 너비" min={30} max={100} value={props.selectedHtmlCard.width} suffix="%" onChange={(width) => props.onPatchHtmlCard({ width })} />
+              <RangeField label="카드 크기" min={50} max={180} value={props.selectedHtmlCard.scale} suffix="%" onChange={(scale) => props.onPatchHtmlCard({ scale })} />
+              <button className="danger-button" type="button" onClick={props.onDeleteHtmlCard}><Trash2 aria-hidden="true" /> HTML 카드 삭제</button>
+            </div>
+          ) : null}
+        </Section>
       </div>
     </>
   )
@@ -952,7 +1192,9 @@ function LayoutPanel(props: Props) {
       <PanelHeader
         title="지면과 활자"
         onReset={() => props.onPatchOptions({
+          paperPreset: DEFAULT_OPTIONS.paperPreset,
           pageWidth: DEFAULT_OPTIONS.pageWidth,
+          pageHeight: DEFAULT_OPTIONS.pageHeight,
           paddingX: DEFAULT_OPTIONS.paddingX,
           paddingY: DEFAULT_OPTIONS.paddingY,
           fontFamily: DEFAULT_OPTIONS.fontFamily,
@@ -964,13 +1206,27 @@ function LayoutPanel(props: Props) {
           paragraphSpacing: DEFAULT_OPTIONS.paragraphSpacing,
           scaleX: DEFAULT_OPTIONS.scaleX,
           defaultTextAlign: DEFAULT_OPTIONS.defaultTextAlign,
+          wordBreak: DEFAULT_OPTIONS.wordBreak,
         })}
       />
       <div className="panel-scroll">
         <Section title="페이지">
-          <RangeField label="페이지 너비" min={340} max={680} step={10} value={options.pageWidth} suffix="px" onChange={(pageWidth) => props.onPatchOptions({ pageWidth })} />
+          <Field label="용지 사이즈">
+            <select value={options.paperPreset} onChange={(event) => {
+              const paperPreset = event.target.value as BookOptions["paperPreset"]
+              props.onPatchOptions({ paperPreset, pageHeight: pageHeightForPreset(paperPreset, options.pageWidth, options.pageHeight) })
+            }}>
+              <option value="custom">자유 비율</option>
+              <option value="a4">A4</option>
+              <option value="a5">A5</option>
+              <option value="b6">B6 문고본</option>
+            </select>
+          </Field>
+          <RangeField label="페이지 너비" min={280} max={900} step={10} value={options.pageWidth} suffix="px" onChange={(pageWidth) => props.onPatchOptions({ pageWidth, pageHeight: pageHeightForPreset(options.paperPreset, pageWidth, options.pageHeight) })} />
+          <RangeField label="페이지 높이" min={300} max={1600} step={10} value={options.pageHeight} suffix="px" onChange={(pageHeight) => props.onPatchOptions({ paperPreset: "custom", pageHeight })} />
           <RangeField label="가로 여백" min={24} max={110} value={options.paddingX} suffix="px" onChange={(paddingX) => props.onPatchOptions({ paddingX })} />
           <RangeField label="세로 여백" min={30} max={130} value={options.paddingY} suffix="px" onChange={(paddingY) => props.onPatchOptions({ paddingY })} />
+          <button className="primary-button" type="button" onClick={props.onFitPageHeight}>선택 페이지 텍스트에 높이 맞추기</button>
         </Section>
         <Section title="글꼴">
           <Field label="기본 글꼴">
@@ -1001,6 +1257,12 @@ function LayoutPanel(props: Props) {
           </Field>
         </Section>
         <Section title="조판" open={false}>
+          <Field label="줄바꿈 기준">
+            <select value={options.wordBreak} onChange={(event) => props.onPatchOptions({ wordBreak: event.target.value as BookOptions["wordBreak"] })}>
+              <option value="keep-all">단어 단위</option>
+              <option value="break-all">글자 단위</option>
+            </select>
+          </Field>
           <Field label="기본 문단 정렬">
             <select value={options.defaultTextAlign} onChange={(event) => props.onPatchOptions({ defaultTextAlign: event.target.value as BookOptions["defaultTextAlign"] })}>
               <option value="justify">양쪽 정렬</option>
@@ -1028,6 +1290,8 @@ function LayoutPanel(props: Props) {
 
 function BookPanel(props: Props) {
   const options = props.document.options
+  const [metaScope, setMetaScope] = useState<"selected" | "all">("selected")
+  const meta = props.currentPageMeta
   const footer = props.document.footers[props.selectedPage] ?? {
     title: props.document.title,
     subtitle: "",
@@ -1045,6 +1309,46 @@ function BookPanel(props: Props) {
           <Field label="책 이름">
             <input value={props.document.title} onFocus={props.onInputSessionStart} onChange={(event) => props.onSetTitle(event.target.value, true)} onBlur={props.onInputSessionEnd} />
           </Field>
+        </Section>
+        <Section title={`페이지 제목·정보 · ${props.selectedPage}쪽`}>
+          <Field label="적용 대상">
+            <select value={metaScope} onChange={(event) => setMetaScope(event.target.value as "selected" | "all")}>
+              <option value="selected">선택한 페이지만</option>
+              <option value="all">모든 페이지</option>
+            </select>
+          </Field>
+          <Field label="제목"><input value={meta.title} onChange={(event) => props.onPatchPageMeta({ title: event.target.value }, metaScope)} /></Field>
+          <Field label="부제목"><input value={meta.subtitle} onChange={(event) => props.onPatchPageMeta({ subtitle: event.target.value }, metaScope)} /></Field>
+          <Field label="책 이름"><input value={meta.bookName} onChange={(event) => props.onPatchPageMeta({ bookName: event.target.value }, metaScope)} /></Field>
+          <Field label="캐릭터 이름"><input value={meta.characterName} onChange={(event) => props.onPatchPageMeta({ characterName: event.target.value }, metaScope)} /></Field>
+          <Section title="제목 스타일" open={false}>
+            <Field label="글꼴"><select value={meta.titleStyle.font} onChange={(event) => props.onPatchPageMeta({ titleStyle: { ...meta.titleStyle, font: event.target.value } }, metaScope)}>{FONT_OPTIONS.map((font) => <option value={font} key={font}>{font}</option>)}</select></Field>
+            <RangeField label="크기" min={14} max={48} value={meta.titleStyle.size} suffix="px" onChange={(size) => props.onPatchPageMeta({ titleStyle: { ...meta.titleStyle, size } }, metaScope)} />
+            <RangeField label="불투명도" min={0.1} max={1} step={0.05} value={meta.titleStyle.opacity} onChange={(opacity) => props.onPatchPageMeta({ titleStyle: { ...meta.titleStyle, opacity } }, metaScope)} />
+            <ColorInput label="색" value={meta.titleStyle.color} onChange={(color) => props.onPatchPageMeta({ titleStyle: { ...meta.titleStyle, color } }, metaScope)} />
+            <label className="toggle-row"><input type="checkbox" checked={meta.titleStyle.bold} onChange={(event) => props.onPatchPageMeta({ titleStyle: { ...meta.titleStyle, bold: event.target.checked } }, metaScope)} /><span>굵게</span></label>
+            <label className="toggle-row"><input type="checkbox" checked={meta.titleStyle.italic} onChange={(event) => props.onPatchPageMeta({ titleStyle: { ...meta.titleStyle, italic: event.target.checked } }, metaScope)} /><span>기울임</span></label>
+          </Section>
+          <Section title="부제목 스타일" open={false}>
+            <Field label="글꼴"><select value={meta.subtitleStyle.font} onChange={(event) => props.onPatchPageMeta({ subtitleStyle: { ...meta.subtitleStyle, font: event.target.value } }, metaScope)}>{FONT_OPTIONS.map((font) => <option value={font} key={font}>{font}</option>)}</select></Field>
+            <RangeField label="크기" min={10} max={28} value={meta.subtitleStyle.size} suffix="px" onChange={(size) => props.onPatchPageMeta({ subtitleStyle: { ...meta.subtitleStyle, size } }, metaScope)} />
+            <RangeField label="불투명도" min={0.1} max={1} step={0.05} value={meta.subtitleStyle.opacity} onChange={(opacity) => props.onPatchPageMeta({ subtitleStyle: { ...meta.subtitleStyle, opacity } }, metaScope)} />
+            <ColorInput label="색" value={meta.subtitleStyle.color} onChange={(color) => props.onPatchPageMeta({ subtitleStyle: { ...meta.subtitleStyle, color } }, metaScope)} />
+            <label className="toggle-row"><input type="checkbox" checked={meta.subtitleStyle.bold} onChange={(event) => props.onPatchPageMeta({ subtitleStyle: { ...meta.subtitleStyle, bold: event.target.checked } }, metaScope)} /><span>굵게</span></label>
+            <label className="toggle-row"><input type="checkbox" checked={meta.subtitleStyle.italic} onChange={(event) => props.onPatchPageMeta({ subtitleStyle: { ...meta.subtitleStyle, italic: event.target.checked } }, metaScope)} /><span>기울임</span></label>
+          </Section>
+          <Section title="책·캐릭터 이름 스타일" open={false}>
+            <Field label="책 이름 글꼴"><select value={meta.bookNameStyle.font} onChange={(event) => props.onPatchPageMeta({ bookNameStyle: { ...meta.bookNameStyle, font: event.target.value } }, metaScope)}>{FONT_OPTIONS.map((font) => <option value={font} key={font}>{font}</option>)}</select></Field>
+            <RangeField label="책 이름 크기" min={9} max={24} value={meta.bookNameStyle.size} suffix="px" onChange={(size) => props.onPatchPageMeta({ bookNameStyle: { ...meta.bookNameStyle, size } }, metaScope)} />
+            <ColorInput label="책 이름색" value={meta.bookNameStyle.color} onChange={(color) => props.onPatchPageMeta({ bookNameStyle: { ...meta.bookNameStyle, color } }, metaScope)} />
+            <label className="toggle-row"><input type="checkbox" checked={meta.bookNameStyle.bold} onChange={(event) => props.onPatchPageMeta({ bookNameStyle: { ...meta.bookNameStyle, bold: event.target.checked } }, metaScope)} /><span>책 이름 굵게</span></label>
+            <label className="toggle-row"><input type="checkbox" checked={meta.bookNameStyle.italic} onChange={(event) => props.onPatchPageMeta({ bookNameStyle: { ...meta.bookNameStyle, italic: event.target.checked } }, metaScope)} /><span>책 이름 기울임</span></label>
+            <Field label="캐릭터 이름 글꼴"><select value={meta.characterNameStyle.font} onChange={(event) => props.onPatchPageMeta({ characterNameStyle: { ...meta.characterNameStyle, font: event.target.value } }, metaScope)}>{FONT_OPTIONS.map((font) => <option value={font} key={font}>{font}</option>)}</select></Field>
+            <RangeField label="캐릭터 이름 크기" min={9} max={24} value={meta.characterNameStyle.size} suffix="px" onChange={(size) => props.onPatchPageMeta({ characterNameStyle: { ...meta.characterNameStyle, size } }, metaScope)} />
+            <ColorInput label="캐릭터 이름색" value={meta.characterNameStyle.color} onChange={(color) => props.onPatchPageMeta({ characterNameStyle: { ...meta.characterNameStyle, color } }, metaScope)} />
+            <label className="toggle-row"><input type="checkbox" checked={meta.characterNameStyle.bold} onChange={(event) => props.onPatchPageMeta({ characterNameStyle: { ...meta.characterNameStyle, bold: event.target.checked } }, metaScope)} /><span>캐릭터 이름 굵게</span></label>
+            <label className="toggle-row"><input type="checkbox" checked={meta.characterNameStyle.italic} onChange={(event) => props.onPatchPageMeta({ characterNameStyle: { ...meta.characterNameStyle, italic: event.target.checked } }, metaScope)} /><span>캐릭터 이름 기울임</span></label>
+          </Section>
         </Section>
         <Section title="표지">
           <Field label="표지 구성">
@@ -1108,6 +1412,13 @@ function ExportPanel(props: Props) {
     <>
       <PanelHeader title="저장과 내보내기" />
       <div className="panel-scroll">
+        <Section title="페이지 선택">
+          <div className="bubble-move-buttons">
+            <button className="secondary-button" type="button" onClick={props.onSelectAllPages}><Check aria-hidden="true" /> 전체 선택</button>
+            <button className="secondary-button" type="button" onClick={props.onSelectCurrentPage}><X aria-hidden="true" /> 현재 쪽만</button>
+          </div>
+          <p className="section-note">캔버스에서는 Ctrl 또는 ⌘를 누른 채 페이지를 눌러 여러 쪽을 고를 수 있어요.</p>
+        </Section>
         <Section title="이미지로 저장">
           <button className="export-choice is-copy" type="button" onClick={props.onCopyPage}>
             <ClipboardCopy aria-hidden="true" />
@@ -1163,13 +1474,14 @@ export function Inspector(props: Props) {
     theme: <ThemePanel {...props} />,
     image: <ImagePanel {...props} />,
     dialogue: <DialoguePanel {...props} />,
+    decorate: <DecoratePanel {...props} />,
     layout: <LayoutPanel {...props} />,
     book: <BookPanel {...props} />,
     export: <ExportPanel {...props} />,
   }[props.activeTab]
 
   return (
-    <aside className="inspector" aria-label="편집 설정">
+    <aside className="inspector" aria-label="편집 설정" data-preserve-page-selection>
       <button className="inspector-close icon-button" type="button" onClick={props.onClose} title="설정 닫기">
         <X aria-hidden="true" />
       </button>

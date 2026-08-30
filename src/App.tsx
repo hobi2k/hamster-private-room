@@ -7,7 +7,9 @@ import { Inspector } from "./components/Inspector"
 import { ToolRail } from "./components/ToolRail"
 import { DEFAULT_OPTIONS } from "./data/themes"
 import { copyBookPage, downloadExportFiles, exportBook } from "./lib/export"
+import { sanitizeHtml } from "./lib/html"
 import { fitImageToPage } from "./lib/image"
+import { defaultPageAppearance, defaultPageMeta } from "./lib/page"
 import {
   ACTIVE_BOOK_KEY,
   bookStorageKey,
@@ -18,8 +20,9 @@ import {
   saveBookSlots,
   upsertBookSlot,
 } from "./lib/library"
-import { flowInsertionAnchor, PAGE_BREAK, paginateText } from "./lib/pagination"
+import { flowInsertionAnchor, flowInsertionPage, PAGE_BREAK, paginateText } from "./lib/pagination"
 import { estimateSpeechBubbleHeight, moveSpeechBubble, pageForAnchor, pageForBlock } from "./lib/speech"
+import { consumeSmartSyntax } from "./lib/smart"
 import { applyAlignmentMark, applyFontMark, applyRangeMark, clearInlineMarksInRange, paragraphSelectionRange } from "./lib/text"
 import type {
   BookDocument,
@@ -30,11 +33,16 @@ import type {
   EditorTab,
   ExportMode,
   FooterNote,
+  HtmlCardBlock,
   ImageLayer,
   InlineImageBlock,
   MarkKind,
   MemberProfile,
+  PageAppearance,
+  PageMeta,
   SpeechBubble,
+  StickerKind,
+  StickerLayer,
   ThemePreset,
   TextSelection,
   ToastState,
@@ -60,8 +68,13 @@ function createDocument(): BookDocument {
     speechBubbles: [],
     dividers: [],
     inlineImages: [],
+    htmlCards: [],
+    stickers: [],
+    stickerAssets: [],
     marks: [],
     footers: {},
+    pageAppearances: {},
+    pageMetas: {},
     updatedAt: new Date().toISOString(),
   }
 }
@@ -70,6 +83,7 @@ function documentFlowBlocks(
   bubbles: SpeechBubble[],
   dividers: DividerBlock[],
   inlineImages: InlineImageBlock[],
+  htmlCards: HtmlCardBlock[],
   members: MemberProfile[],
   options: BookOptions,
   measuredHeights: Record<string, number> = {},
@@ -79,6 +93,7 @@ function documentFlowBlocks(
     .map((bubble) => ({
       id: bubble.id,
       anchor: bubble.anchor,
+      minPage: bubble.page,
       order: bubble.zIndex,
       rank: bubble.flowRank ?? 0,
       // Prefer the real rendered height (measured from the DOM) so pagination
@@ -95,6 +110,7 @@ function documentFlowBlocks(
     anchor: divider.anchor,
     order: divider.order,
     rank: 1,
+    minPage: undefined,
     height: options.pageWidth * 0.09,
   }))
   const contentWidth = Math.max(120, options.pageWidth - options.paddingX * 2)
@@ -103,11 +119,20 @@ function documentFlowBlocks(
     anchor: image.anchor,
     order: image.order,
     rank: 2,
-    height: (contentWidth * (image.width / 100)) / Math.max(0.1, image.aspectRatio) + options.fontSize * 1.5,
+    minPage: undefined,
+    height: image.height ?? (contentWidth * (image.width / 100)) / Math.max(0.1, image.aspectRatio) + options.fontSize * 1.5,
   }))
-  return [...speechBlocks, ...dividerBlocks, ...imageBlocks]
+  const htmlBlocks = htmlCards.map((card) => ({
+    id: card.id,
+    anchor: card.anchor,
+    order: card.order,
+    rank: 3,
+    minPage: undefined,
+    height: Math.max(90, options.pageWidth * 0.32 * ((card.scale ?? 100) / 100)),
+  }))
+  return [...speechBlocks, ...dividerBlocks, ...imageBlocks, ...htmlBlocks]
     .sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
-    .map(({ id, anchor, height }) => ({ id, anchor, height }))
+    .map(({ id, anchor, height, minPage }) => ({ id, anchor, height, minPage }))
 }
 
 function normalizeDocument(parsed: Partial<BookDocument>) {
@@ -118,6 +143,7 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
   const basePages = paginateText(body, options)
   let speechBubbles = Array.isArray(parsed.speechBubbles) ? parsed.speechBubbles.map((bubble) => {
     const page = Math.max(0, bubble.page ?? 1)
+    const member = members.find((item) => item.id === bubble.profileId)
     const slice = basePages[Math.max(0, page - 1)] ?? basePages.at(-1)
     const legacyAnchor = page === 0 || !slice
       ? 0
@@ -127,6 +153,11 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
       page,
       anchor: Math.max(0, Math.min(body.length, Number.isFinite(bubble.anchor) ? bubble.anchor : legacyAnchor)),
       flowRank: bubble.flowRank === 1 ? 1 : undefined,
+      showName: bubble.showName ?? !member?.hideName,
+      nameColor: bubble.nameColor ?? member?.nameColor ?? bubble.textColor,
+      nameOutline: bubble.nameOutline ?? member?.nameOutline ?? false,
+      nameOutlineColor: bubble.nameOutlineColor ?? member?.nameOutlineColor ?? "#ffffff",
+      continuation: bubble.continuation ?? false,
     }
   }) : []
   const legacyDialogueTexts = (parsed as Partial<BookDocument> & {
@@ -161,13 +192,38 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
     anchor: Math.max(0, Math.min(body.length, Number.isFinite(image.anchor) ? image.anchor : body.length)),
     width: Math.max(24, Math.min(100, Number.isFinite(image.width) ? image.width : 92)),
     aspectRatio: Math.max(0.1, Number.isFinite(image.aspectRatio) ? image.aspectRatio : 1.6),
+    height: Number.isFinite(image.height) ? Math.max(80, Math.min(700, image.height!)) : undefined,
+    opacity: Number.isFinite(image.opacity) ? Math.max(0.1, Math.min(1, image.opacity!)) : 1,
     scale: Math.max(100, Math.min(400, Number.isFinite(image.scale) ? image.scale : 100)),
     x: Math.max(0, Math.min(100, Number.isFinite(image.x) ? image.x : 50)),
     y: Math.max(0, Math.min(100, Number.isFinite(image.y) ? image.y : 50)),
     align: image.align === "left" || image.align === "right" ? image.align : "center" as const,
     order: Number.isFinite(image.order) ? image.order : index + 1,
   })) : []
-  const pages = paginateText(body, options, documentFlowBlocks(speechBubbles, dividers, inlineImages, members, options))
+  const htmlCards = Array.isArray(parsed.htmlCards) ? parsed.htmlCards.map((card, index) => ({
+    ...card,
+    anchor: Math.max(0, Math.min(body.length, Number.isFinite(card.anchor) ? card.anchor : body.length)),
+    width: Math.max(30, Math.min(100, Number.isFinite(card.width) ? card.width : 100)),
+    scale: Math.max(50, Math.min(180, Number.isFinite(card.scale) ? card.scale : 100)),
+    align: card.align === "left" || card.align === "right" ? card.align : "center" as const,
+    order: Number.isFinite(card.order) ? card.order : index + 1,
+  })) : []
+  const pages = paginateText(body, options, documentFlowBlocks(speechBubbles, dividers, inlineImages, htmlCards, members, options))
+  const pageAppearances = Object.fromEntries(Object.entries(parsed.pageAppearances ?? {}).map(([page, appearance]) => [page, {
+    ...defaultPageAppearance(options),
+    ...appearance,
+  }]))
+  const pageMetas = Object.fromEntries(Object.entries(parsed.pageMetas ?? {}).map(([page, meta]) => {
+    const defaults = defaultPageMeta(parsed.title ?? "", options)
+    return [page, {
+      ...defaults,
+      ...meta,
+      titleStyle: { ...defaults.titleStyle, ...meta.titleStyle },
+      subtitleStyle: { ...defaults.subtitleStyle, ...meta.subtitleStyle },
+      bookNameStyle: { ...defaults.bookNameStyle, ...meta.bookNameStyle },
+      characterNameStyle: { ...defaults.characterNameStyle, ...meta.characterNameStyle },
+    }]
+  }))
   const normalized = {
     ...createDocument(),
     ...parsed,
@@ -180,8 +236,12 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
       x: Number.isFinite(image.x) ? image.x : 0,
       y: Number.isFinite(image.y) ? image.y : 0,
       width: Number.isFinite(image.width) && image.width > 0 ? image.width : 100,
+      height: Number.isFinite(image.height) ? Math.max(1, image.height!) : undefined,
+      stretch: Boolean(image.stretch),
       rotation: Number.isFinite(image.rotation) ? image.rotation : 0,
       opacity: Number.isFinite(image.opacity) ? image.opacity : 1,
+      grayscale: Boolean(image.grayscale),
+      overlay: Number.isFinite(image.overlay) ? Math.max(0, Math.min(0.9, image.overlay!)) : 0,
       zIndex: Number.isFinite(image.zIndex) ? image.zIndex : 1,
       page: Number.isFinite(image.page) ? image.page : 1,
     })) : [],
@@ -192,12 +252,27 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
     }),
     dividers,
     inlineImages,
+    htmlCards,
+    stickers: Array.isArray(parsed.stickers) ? parsed.stickers.map((sticker, index) => ({
+      ...sticker,
+      page: Number.isFinite(sticker.page) ? Math.max(0, sticker.page) : 1,
+      x: Number.isFinite(sticker.x) ? Math.max(0, Math.min(100, sticker.x)) : 50,
+      y: Number.isFinite(sticker.y) ? Math.max(0, Math.min(100, sticker.y)) : 48,
+      size: Number.isFinite(sticker.size) ? Math.max(24, Math.min(220, sticker.size)) : 56,
+      rotation: Number.isFinite(sticker.rotation) ? sticker.rotation : 0,
+      flipped: Boolean(sticker.flipped),
+      color: sticker.color || "#ffd23f",
+      zIndex: Number.isFinite(sticker.zIndex) ? sticker.zIndex : index + 1,
+    })) : [],
+    stickerAssets: Array.isArray(parsed.stickerAssets) ? parsed.stickerAssets : [],
     marks,
     footers: Object.fromEntries(Object.entries(parsed.footers ?? {}).map(([page, footer]) => [page, {
       ...footer,
       titleFont: footer.titleFont ?? options.fontFamily,
       subtitleFont: footer.subtitleFont ?? options.fontFamily,
     }])),
+    pageAppearances,
+    pageMetas,
   }
   delete (normalized as BookDocument & { dialogueTexts?: unknown }).dialogueTexts
   return normalized
@@ -222,6 +297,13 @@ function normalizeMembers(members: BookDocument["members"] | undefined) {
     avatarScale: member.avatarScale ?? 100,
     avatarX: member.avatarX ?? 50,
     avatarY: member.avatarY ?? 50,
+    backgroundColor: member.backgroundColor ?? "#ffffff",
+    label: member.label ?? member.name.slice(0, 1),
+    labelColor: member.labelColor ?? "#777777",
+    nameColor: member.nameColor ?? member.textColor,
+    nameOutline: member.nameOutline ?? false,
+    nameOutlineColor: member.nameOutlineColor ?? "#ffffff",
+    hideName: member.hideName ?? false,
   }))
 }
 
@@ -357,6 +439,8 @@ export default function App() {
   const [selectedBubbleId, setSelectedBubbleId] = useState("")
   const [selectedDividerId, setSelectedDividerId] = useState("")
   const [selectedInlineImageId, setSelectedInlineImageId] = useState("")
+  const [selectedHtmlCardId, setSelectedHtmlCardId] = useState("")
+  const [selectedStickerId, setSelectedStickerId] = useState("")
   const [textSelection, setTextSelection] = useState<TextSelection | null>(null)
   const [pendingCaret, setPendingCaret] = useState<{ offset: number; beforeBlockId: string | null } | null>(null)
   const [transformMode, setTransformMode] = useState(true)
@@ -548,8 +632,8 @@ export default function App() {
   }, [customPresets])
 
   const flowBlocks = useMemo(
-    () => documentFlowBlocks(documentState.speechBubbles, documentState.dividers, documentState.inlineImages, documentState.members, documentState.options, bubbleHeights),
-    [documentState.dividers, documentState.inlineImages, documentState.members, documentState.options, documentState.speechBubbles, bubbleHeights],
+    () => documentFlowBlocks(documentState.speechBubbles, documentState.dividers, documentState.inlineImages, documentState.htmlCards, documentState.members, documentState.options, bubbleHeights),
+    [documentState.dividers, documentState.inlineImages, documentState.htmlCards, documentState.members, documentState.options, documentState.speechBubbles, bubbleHeights],
   )
   const pages = useMemo(() => paginateText(documentState.body, documentState.options, flowBlocks), [documentState.body, documentState.options, flowBlocks])
   const maxPage = pages.length
@@ -557,6 +641,8 @@ export default function App() {
   const selectedBubble = documentState.speechBubbles.find((bubble) => bubble.id === selectedBubbleId) ?? null
   const selectedDivider = documentState.dividers.find((divider) => divider.id === selectedDividerId) ?? null
   const selectedInlineImage = documentState.inlineImages.find((image) => image.id === selectedInlineImageId) ?? null
+  const selectedHtmlCard = documentState.htmlCards.find((card) => card.id === selectedHtmlCardId) ?? null
+  const selectedSticker = documentState.stickers.find((sticker) => sticker.id === selectedStickerId) ?? null
 
   useEffect(() => {
     const fallback = selectedPage > maxPage || (selectedPage === 0 && documentState.options.coverMode === "none") ? Math.max(1, maxPage) : selectedPage
@@ -615,22 +701,33 @@ export default function App() {
       const inlineImages = current.inlineImages
         .filter((image) => !removed.has(pageForBlock(image.id, pages)))
         .map((image) => ({ ...image, anchor: text.mapOffset(image.anchor) }))
-      const nextPages = paginateText(text.body, options, documentFlowBlocks(speechBubbles, dividers, inlineImages, current.members, options, bubbleHeightsRef.current))
+      const htmlCards = current.htmlCards
+        .filter((card) => !removed.has(pageForBlock(card.id, pages)))
+        .map((card) => ({ ...card, anchor: text.mapOffset(card.anchor) }))
+      const nextPages = paginateText(text.body, options, documentFlowBlocks(speechBubbles, dividers, inlineImages, htmlCards, current.members, options, bubbleHeightsRef.current))
       return {
         ...current,
         body: text.body,
         marks: text.marks,
         options,
         images: current.images.filter((image) => !removed.has(image.page)).map((image) => ({ ...image, page: Math.min(remapPage(image.page), nextPages.length) })),
+        stickers: current.stickers.filter((sticker) => !removed.has(sticker.page)).map((sticker) => ({ ...sticker, page: Math.min(remapPage(sticker.page), nextPages.length) })),
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
           ...bubble,
           page: pageForBlock(bubble.id, nextPages) || pageForAnchor(bubble.anchor, nextPages),
         }),
         dividers,
         inlineImages,
+        htmlCards,
         footers: Object.fromEntries(Object.entries(current.footers)
           .filter(([page]) => !removed.has(Number(page)))
           .map(([page, footer]) => [remapPage(Number(page)), footer])),
+        pageAppearances: Object.fromEntries(Object.entries(current.pageAppearances)
+          .filter(([page]) => !removed.has(Number(page)))
+          .map(([page, appearance]) => [remapPage(Number(page)), appearance])),
+        pageMetas: Object.fromEntries(Object.entries(current.pageMetas)
+          .filter(([page]) => !removed.has(Number(page)))
+          .map(([page, meta]) => [remapPage(Number(page)), meta])),
       }
     })
     const nextPage = Math.min(contentPages[0] ?? 1, Math.max(1, pages.length - contentPages.length))
@@ -640,6 +737,8 @@ export default function App() {
     setSelectedBubbleId("")
     setSelectedDividerId("")
     setSelectedInlineImageId("")
+    setSelectedHtmlCardId("")
+    setSelectedStickerId("")
     setTextSelection(null)
     const message = pageNumbers.length > 1
       ? `${pageNumbers.length}개 페이지를 지웠어요.`
@@ -718,21 +817,56 @@ export default function App() {
         event.preventDefault()
         commit((current) => ({ ...current, inlineImages: current.inlineImages.filter((image) => image.id !== selectedInlineImageId) }))
         setSelectedInlineImageId("")
+        return
+      }
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedHtmlCardId && !target.closest("input, textarea, [contenteditable]")) {
+        event.preventDefault()
+        commit((current) => ({ ...current, htmlCards: current.htmlCards.filter((card) => card.id !== selectedHtmlCardId) }))
+        setSelectedHtmlCardId("")
+        return
+      }
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedStickerId && !target.closest("input, textarea, [contenteditable]")) {
+        event.preventDefault()
+        commit((current) => ({ ...current, stickers: current.stickers.filter((sticker) => sticker.id !== selectedStickerId) }))
+        setSelectedStickerId("")
       }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [commit, deleteSelectedPages, redo, selectedBubbleId, selectedDividerId, selectedImageId, selectedInlineImageId, selectedPages.length, undo])
+  }, [commit, deleteSelectedPages, redo, selectedBubbleId, selectedDividerId, selectedHtmlCardId, selectedImageId, selectedInlineImageId, selectedPages.length, selectedStickerId, undo])
 
   const patchOptions = (patch: Partial<BookOptions>, transient = false) => {
     const update = (current: BookDocument) => {
       // Hiding the cover stops page 0 from rendering — move its image layers to
       // page 1 so they aren't orphaned and unrecoverable.
       const hidingCover = patch.coverMode === "none" && current.options.coverMode !== "none"
+      const options = { ...current.options, ...patch }
+      const smart = consumeSmartSyntax(current.body, options)
+      const bodyChanged = smart.text !== current.body
+      const retainedMarks = current.marks.flatMap((mark) => {
+        const mapped = bodyChanged ? { ...mark, start: smart.mapOffset(mark.start), end: smart.mapOffset(mark.end) } : mark
+        if (mapped.end <= mapped.start) return []
+        if (mapped.source === "smart-bold") return options.smartBold ? [mapped] : []
+        if (mapped.source === "smart-asterisk") {
+          return options.smartAsterisk ? [{
+            ...mapped,
+            kind: options.asteriskItalic ? "italic" as const : "color" as const,
+            value: options.asteriskItalic ? "italic" : options.asteriskColor,
+          }] : []
+        }
+        return [mapped]
+      })
       return {
         ...current,
-        options: { ...current.options, ...patch },
+        body: smart.text,
+        options,
         images: hidingCover ? current.images.map((image) => image.page === 0 ? { ...image, page: 1 } : image) : current.images,
+        stickers: hidingCover ? current.stickers.map((sticker) => sticker.page === 0 ? { ...sticker, page: 1 } : sticker) : current.stickers,
+        marks: [...retainedMarks, ...smart.marks.map((mark) => ({ ...mark, id: crypto.randomUUID() }))],
+        speechBubbles: bodyChanged ? current.speechBubbles.map((bubble) => ({ ...bubble, anchor: smart.mapOffset(bubble.anchor) })) : current.speechBubbles,
+        dividers: bodyChanged ? current.dividers.map((divider) => ({ ...divider, anchor: smart.mapOffset(divider.anchor) })) : current.dividers,
+        inlineImages: bodyChanged ? current.inlineImages.map((image) => ({ ...image, anchor: smart.mapOffset(image.anchor) })) : current.inlineImages,
+        htmlCards: bodyChanged ? current.htmlCards.map((card) => ({ ...card, anchor: smart.mapOffset(card.anchor) })) : current.htmlCards,
       }
     }
     if (transient) updateTransient(update)
@@ -748,6 +882,8 @@ export default function App() {
     setSelectedBubbleId("")
     setSelectedDividerId("")
     setSelectedInlineImageId("")
+    setSelectedHtmlCardId("")
+    setSelectedStickerId("")
     setTextSelection(null)
     notify(`${nextPage}쪽을 추가했어요.`, "success")
     window.requestAnimationFrame(() => {
@@ -762,12 +898,16 @@ export default function App() {
     followingBlockIds: string[],
     caret?: { offset: number; beforeBlockId: string | null },
   ) => {
-    if (caret !== undefined) setPendingCaret(caret)
+    const smart = consumeSmartSyntax(text, documentRef.current.options)
+    if (caret !== undefined) {
+      const localOffset = Math.max(0, Math.min(text.length, caret.offset - start))
+      setPendingCaret({ ...caret, offset: start + smart.mapOffset(localOffset) })
+    }
     updateTransient((current) => {
-      if (current.body.slice(start, end) === text) return current
-      const delta = text.length - (end - start)
+      if (current.body.slice(start, end) === smart.text && !smart.marks.length) return current
+      const delta = smart.text.length - (end - start)
       const following = new Set(followingBlockIds)
-      const body = `${current.body.slice(0, start)}${text}${current.body.slice(end)}`
+      const body = `${current.body.slice(0, start)}${smart.text}${current.body.slice(end)}`
       const order = new Map(current.speechBubbles
         .filter((bubble) => bubble.page > 0 && (bubble.flowRank ?? 0) === 0)
         .sort((left, right) => left.anchor - right.anchor || left.zIndex - right.zIndex)
@@ -796,7 +936,13 @@ export default function App() {
           ? Math.max(0, image.anchor + delta)
           : image.anchor,
       }))
-      const nextPages = paginateText(body, current.options, documentFlowBlocks(speechBubbles, dividers, inlineImages, current.members, current.options, bubbleHeightsRef.current))
+      const htmlCards = current.htmlCards.map((card) => ({
+        ...card,
+        anchor: card.anchor > end || (card.anchor === end && following.has(card.id))
+          ? Math.max(0, card.anchor + delta)
+          : card.anchor,
+      }))
+      const nextPages = paginateText(body, current.options, documentFlowBlocks(speechBubbles, dividers, inlineImages, htmlCards, current.members, current.options, bubbleHeightsRef.current))
       return {
         ...current,
         body,
@@ -806,7 +952,8 @@ export default function App() {
         }),
         dividers,
         inlineImages,
-        marks: current.marks.flatMap((mark) => {
+        htmlCards,
+        marks: [...current.marks.flatMap((mark) => {
           // Alignment is a paragraph (block) property, not an inline range — it
           // must stay ONE contiguous mark, never be split, or the paragraph
           // fragments into stacked divs.
@@ -831,7 +978,7 @@ export default function App() {
             start: part.start,
             end: part.end,
           }))
-        }),
+        }), ...smart.marks.map((mark) => ({ ...mark, id: crypto.randomUUID(), start: start + mark.start, end: start + mark.end }))],
       }
     })
   }
@@ -843,7 +990,7 @@ export default function App() {
       return
     }
     const aspectRatio = await imageAspectRatio(src)
-    const fitted = fitImageToPage(aspectRatio)
+    const fitted = fitImageToPage(aspectRatio, documentRef.current.options.pageHeight / documentRef.current.options.pageWidth)
     const id = crypto.randomUUID()
     commit((current) => ({
       ...current,
@@ -856,6 +1003,9 @@ export default function App() {
           name: file.name,
           ...fitted,
           opacity: 1,
+          grayscale: false,
+          overlay: 0,
+          stretch: false,
           zIndex: Math.max(0, ...current.images.map((image) => image.zIndex)) + 1,
           aspectRatio,
         },
@@ -908,6 +1058,8 @@ export default function App() {
         name: file.name,
         width: 92,
         aspectRatio,
+        height: 260,
+        opacity: 1,
         scale: 100,
         x: 50,
         y: 50,
@@ -941,6 +1093,136 @@ export default function App() {
     notify("본문 이미지를 지웠어요.")
   }
 
+  const addHtmlCard = (raw: string) => {
+    const html = sanitizeHtml(raw)
+    if (!html) {
+      notify("표시할 수 있는 HTML 내용을 넣어 주세요.", "warn")
+      return
+    }
+    const targetPage = Math.max(1, selectedPage)
+    const page = pages[targetPage - 1]
+    const anchor = page ? flowInsertionAnchor(page, textSelection, targetPage === pages.length) : documentRef.current.body.length
+    const id = crypto.randomUUID()
+    commit((current) => ({
+      ...current,
+      htmlCards: [...current.htmlCards, {
+        id,
+        anchor,
+        html,
+        width: 100,
+        scale: 100,
+        align: "center",
+        order: Math.max(0, ...current.htmlCards.map((card) => card.order)) + 1,
+      }],
+    }))
+    setSelectedHtmlCardId(id)
+    setSelectedStickerId("")
+    setSelectedImageId("")
+    setSelectedBubbleId("")
+    setSelectedDividerId("")
+    setSelectedInlineImageId("")
+    setActiveTab("decorate")
+    notify("HTML 카드를 커서 위치에 넣었어요.", "success")
+  }
+
+  const patchHtmlCard = (id: string, patch: Partial<HtmlCardBlock>, transient = false) => {
+    const update = (current: BookDocument) => ({
+      ...current,
+      htmlCards: current.htmlCards.map((card) => card.id === id ? { ...card, ...patch } : card),
+    })
+    if (transient) updateTransient(update)
+    else commit(update)
+  }
+
+  const deleteHtmlCard = (id = selectedHtmlCardId) => {
+    if (!id) return
+    commit((current) => ({ ...current, htmlCards: current.htmlCards.filter((card) => card.id !== id) }))
+    setSelectedHtmlCardId("")
+    notify("HTML 카드를 지웠어요.")
+  }
+
+  const addSticker = (kind: StickerKind, assetId?: string) => {
+    const targetPage = selectedPage
+    const asset = assetId ? documentRef.current.stickerAssets.find((item) => item.id === assetId) : null
+    const id = crypto.randomUUID()
+    commit((current) => ({
+      ...current,
+      stickers: [...current.stickers, {
+        id,
+        page: targetPage,
+        kind: asset ? "custom" : kind,
+        src: asset?.src,
+        name: asset?.name ?? kind,
+        x: 44,
+        y: 44,
+        size: 64,
+        rotation: 0,
+        flipped: false,
+        color: "#ffd23f",
+        zIndex: Math.max(0, ...current.images.map((image) => image.zIndex), ...current.stickers.map((sticker) => sticker.zIndex)) + 1,
+      }],
+    }))
+    setSelectedStickerId(id)
+    setSelectedHtmlCardId("")
+    setSelectedImageId("")
+    setSelectedBubbleId("")
+    setSelectedDividerId("")
+    setSelectedInlineImageId("")
+    setActiveTab("decorate")
+    notify("스티커를 페이지에 붙였어요.", "success")
+  }
+
+  const uploadStickerAsset = async (file: File) => {
+    const src = await imageFileToDataUrl(file)
+    if (!src) {
+      notify("스티커 이미지를 읽지 못했어요.", "warn")
+      return
+    }
+    const assetId = crypto.randomUUID()
+    const stickerId = crypto.randomUUID()
+    commit((current) => ({
+      ...current,
+      stickerAssets: [...current.stickerAssets, { id: assetId, name: file.name, src }],
+      stickers: [...current.stickers, {
+        id: stickerId,
+        page: selectedPage,
+        kind: "custom",
+        src,
+        name: file.name,
+        x: 44,
+        y: 44,
+        size: 64,
+        rotation: 0,
+        flipped: false,
+        color: "#ffd23f",
+        zIndex: Math.max(0, ...current.images.map((image) => image.zIndex), ...current.stickers.map((sticker) => sticker.zIndex)) + 1,
+      }],
+    }))
+    setSelectedStickerId(stickerId)
+    setActiveTab("decorate")
+    notify("내 스티커를 팔레트와 페이지에 추가했어요.", "success")
+  }
+
+  const patchSticker = (id: string, patch: Partial<StickerLayer>, transient = false) => {
+    const update = (current: BookDocument) => ({
+      ...current,
+      stickers: current.stickers.map((sticker) => sticker.id === id ? { ...sticker, ...patch } : sticker),
+    })
+    if (transient) updateTransient(update)
+    else commit(update)
+  }
+
+  const deleteSticker = (id = selectedStickerId) => {
+    if (!id) return
+    commit((current) => ({ ...current, stickers: current.stickers.filter((sticker) => sticker.id !== id) }))
+    setSelectedStickerId("")
+    notify("스티커를 지웠어요.")
+  }
+
+  const deleteStickerAsset = (id: string) => {
+    commit((current) => ({ ...current, stickerAssets: current.stickerAssets.filter((asset) => asset.id !== id) }))
+  }
+
   const addMember = () => {
     const id = crypto.randomUUID()
     const colors = ["#ff777b", "#9ff0c4", "#f2cf68", "#a8d8f0", "#dfb8ec"]
@@ -957,6 +1239,13 @@ export default function App() {
           avatarY: 50,
           bubbleColor: colors[current.members.length % colors.length],
           textColor: "#292725",
+          backgroundColor: "#ffffff",
+          label: `멤버 ${current.members.length + 1}`.slice(0, 1),
+          labelColor: "#777777",
+          nameColor: "#292725",
+          nameOutline: false,
+          nameOutlineColor: "#ffffff",
+          hideName: false,
         },
       ],
     }))
@@ -967,6 +1256,14 @@ export default function App() {
     const update = (current: BookDocument) => ({
       ...current,
       members: current.members.map((member) => member.id === id ? { ...member, ...patch } : member),
+      speechBubbles: current.speechBubbles.map((bubble) => bubble.profileId === id ? {
+        ...bubble,
+        ...(patch.name !== undefined ? { speakerName: patch.name } : {}),
+        ...(patch.hideName !== undefined ? { showName: !patch.hideName } : {}),
+        ...(patch.nameColor !== undefined ? { nameColor: patch.nameColor } : {}),
+        ...(patch.nameOutline !== undefined ? { nameOutline: patch.nameOutline } : {}),
+        ...(patch.nameOutlineColor !== undefined ? { nameOutlineColor: patch.nameOutlineColor } : {}),
+      } : bubble),
     })
     if (transient) updateTransient(update)
     else commit(update)
@@ -976,6 +1273,15 @@ export default function App() {
     const avatar = await imageFileToDataUrl(file)
     if (!avatar) {
       notify("프로필 사진을 읽지 못했어요.", "warn")
+      return
+    }
+    const avatarAspectRatio = await imageAspectRatio(avatar)
+    patchMember(id, { avatar, avatarAspectRatio, avatarScale: 100, avatarX: 50, avatarY: 50 })
+  }
+
+  const setMemberAvatarUrl = async (id: string, avatar: string) => {
+    if (!/^https?:\/\//i.test(avatar)) {
+      notify("http 또는 https 이미지 주소를 입력해 주세요.", "warn")
       return
     }
     const avatarAspectRatio = await imageAspectRatio(avatar)
@@ -1021,7 +1327,7 @@ export default function App() {
           ...current.speechBubbles,
           {
             id,
-            page: selectedPage,
+            page: flowInsertionPage(selectedPage, page, selectionAnchor, pages.length),
             anchor: selectedPage === 0 ? 0 : selectionAnchor,
             profileId,
             speakerName: member.name,
@@ -1033,10 +1339,14 @@ export default function App() {
             autoWidth: true,
             textScale: 100,
             secondaryTextScale: 100,
-            showName: true,
+            showName: !member.hideName,
             side,
             bubbleColor: member.bubbleColor,
             textColor: member.textColor,
+            nameColor: member.nameColor ?? member.textColor,
+            nameOutline: member.nameOutline ?? false,
+            nameOutlineColor: member.nameOutlineColor ?? "#ffffff",
+            continuation: false,
             zIndex: Math.max(0, ...current.images.map((image) => image.zIndex), ...current.speechBubbles.map((bubble) => bubble.zIndex)) + 1,
           },
         ],
@@ -1095,10 +1405,18 @@ export default function App() {
         return {
           ...bubble,
           ...patch,
-          ...(member ? { speakerName: member.name, bubbleColor: member.bubbleColor, textColor: member.textColor } : {}),
+          ...(member ? {
+            speakerName: member.name,
+            bubbleColor: member.bubbleColor,
+            textColor: member.textColor,
+            nameColor: member.nameColor ?? member.textColor,
+            nameOutline: member.nameOutline ?? false,
+            nameOutlineColor: member.nameOutlineColor ?? "#ffffff",
+            showName: !member.hideName,
+          } : {}),
         }
       })
-      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.inlineImages, current.members, current.options, bubbleHeightsRef.current))
+      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.inlineImages, current.htmlCards, current.members, current.options, bubbleHeightsRef.current))
       return {
         ...current,
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
@@ -1115,7 +1433,7 @@ export default function App() {
     commit((current) => {
       const speechBubbles = moveSpeechBubble(current.speechBubbles, current.dividers, id, direction)
       if (speechBubbles === current.speechBubbles) return current
-      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.inlineImages, current.members, current.options, bubbleHeightsRef.current))
+      const nextPages = paginateText(current.body, current.options, documentFlowBlocks(speechBubbles, current.dividers, current.inlineImages, current.htmlCards, current.members, current.options, bubbleHeightsRef.current))
       return {
         ...current,
         speechBubbles: speechBubbles.map((bubble) => bubble.page === 0 ? bubble : {
@@ -1136,7 +1454,7 @@ export default function App() {
     notify("말풍선을 지웠어요.")
   }
 
-  const insertTextAfterBubble = (id = selectedBubbleId) => {
+  const insertTextAroundBubble = (id = selectedBubbleId, position: "before" | "after" = "after") => {
     const current = documentRef.current
     const bubble = current.speechBubbles.find((item) => item.id === id)
     if (!bubble || bubble.page === 0) return
@@ -1144,10 +1462,11 @@ export default function App() {
       ...current.speechBubbles.filter((item) => item.page > 0).map((item) => ({ id: item.id, anchor: item.anchor, order: item.zIndex, rank: item.flowRank ?? 0 })),
       ...current.dividers.map((divider) => ({ id: divider.id, anchor: divider.anchor, order: divider.order, rank: 1 })),
       ...current.inlineImages.map((image) => ({ id: image.id, anchor: image.anchor, order: image.order, rank: 2 })),
+      ...current.htmlCards.map((card) => ({ id: card.id, anchor: card.anchor, order: card.order, rank: 3 })),
     ].sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
-    const next = globalOrder[globalOrder.findIndex((item) => item.id === id) + 1] ?? null
+    const next = position === "before" ? { id: bubble.id } : globalOrder[globalOrder.findIndex((item) => item.id === id) + 1] ?? null
     setPendingCaret({ offset: bubble.anchor, beforeBlockId: next ? next.id : null })
-    notify("말풍선 사이에 바로 글을 쓸 수 있어요.", "success")
+    notify(`말풍선 ${position === "before" ? "앞" : "뒤"}에 바로 글을 쓸 수 있어요.`, "success")
   }
 
   const addMark = (start: number, end: number, kind: MarkKind, value: string) => {
@@ -1198,6 +1517,58 @@ export default function App() {
       const { start: paraStart, end: paraEnd } = paragraphSelectionRange(current.body, selection.start, selection.end)
       return { ...current, marks: applyAlignmentMark(current.marks, paraStart, paraEnd, value, undefined, current.options.defaultTextAlign) }
     })
+  }
+
+  const pageNumbers = () => {
+    const values = Array.from({ length: pages.length }, (_, index) => index + 1)
+    if (documentRef.current.options.coverMode !== "none") values.unshift(0)
+    return values
+  }
+
+  const currentPageAppearance = documentState.pageAppearances[selectedPage] ?? defaultPageAppearance(documentState.options)
+  const patchPageAppearance = (patch: Partial<PageAppearance>, scope: "selected" | "all") => {
+    commit((current) => {
+      const targets = scope === "all" ? pageNumbers() : [selectedPage]
+      const pageAppearances = { ...current.pageAppearances }
+      targets.forEach((page) => {
+        pageAppearances[page] = { ...(pageAppearances[page] ?? defaultPageAppearance(current.options)), ...patch }
+      })
+      return { ...current, pageAppearances }
+    })
+  }
+
+  const currentPageMeta = documentState.pageMetas[selectedPage] ?? defaultPageMeta(documentState.title, documentState.options)
+  const patchPageMeta = (patch: Partial<PageMeta>, scope: "selected" | "all") => {
+    commit((current) => {
+      const targets = scope === "all" ? pageNumbers() : [selectedPage]
+      const pageMetas = { ...current.pageMetas }
+      targets.forEach((page) => {
+        const base = pageMetas[page] ?? defaultPageMeta(current.title, current.options)
+        pageMetas[page] = {
+          ...base,
+          ...patch,
+          titleStyle: patch.titleStyle ? { ...base.titleStyle, ...patch.titleStyle } : base.titleStyle,
+          subtitleStyle: patch.subtitleStyle ? { ...base.subtitleStyle, ...patch.subtitleStyle } : base.subtitleStyle,
+          bookNameStyle: patch.bookNameStyle ? { ...base.bookNameStyle, ...patch.bookNameStyle } : base.bookNameStyle,
+          characterNameStyle: patch.characterNameStyle ? { ...base.characterNameStyle, ...patch.characterNameStyle } : base.characterNameStyle,
+        }
+      })
+      return { ...current, pageMetas }
+    })
+  }
+
+  const fitHeightToSelectedPage = () => {
+    const pageElement = window.document.querySelector<HTMLElement>(`[data-page-index="${selectedPage}"]`)
+    const flow = pageElement?.querySelector<HTMLElement>(".page-copy")
+    if (!pageElement || !flow) {
+      notify("본문 페이지를 선택해 주세요.", "warn")
+      return
+    }
+    const scale = documentState.options.pageWidth / Math.max(1, pageElement.clientWidth)
+    const contentHeight = Math.max(flow.scrollHeight, flow.getBoundingClientRect().height) * scale
+    const pageHeight = Math.round(Math.max(300, Math.min(1600, contentHeight + documentState.options.paddingY * 2 + documentState.options.fontSize * 4.2)))
+    patchOptions({ paperPreset: "custom", pageHeight })
+    notify(`페이지 높이를 ${pageHeight}px로 맞췄어요.`, "success")
   }
 
   const currentFooter = documentState.footers[selectedPage] ?? {
@@ -1280,6 +1651,8 @@ export default function App() {
     setSelectedBubbleId("")
     setSelectedDividerId("")
     setSelectedInlineImageId("")
+    setSelectedHtmlCardId("")
+    setSelectedStickerId("")
     setTextSelection(null)
     setActiveTab("manuscript")
     setMobilePanelOpen(false)
@@ -1365,6 +1738,8 @@ export default function App() {
       setSelectedBubbleId("")
       setSelectedDividerId("")
       setSelectedInlineImageId("")
+      setSelectedHtmlCardId("")
+      setSelectedStickerId("")
       setTextSelection(null)
       return
     }
@@ -1379,6 +1754,8 @@ export default function App() {
     const dividerPage = selectedDivider ? pageForBlock(selectedDivider.id, pages) : -1
     if (selectedDivider && dividerPage !== page) setSelectedDividerId("")
     if (selectedInlineImage && pageForBlock(selectedInlineImage.id, pages) !== page) setSelectedInlineImageId("")
+    if (selectedHtmlCard && pageForBlock(selectedHtmlCard.id, pages) !== page) setSelectedHtmlCardId("")
+    if (selectedSticker && selectedSticker.page !== page) setSelectedStickerId("")
   }
 
   const pageCount = pages.length + (documentState.options.coverMode === "none" ? 0 : 1)
@@ -1482,6 +1859,10 @@ export default function App() {
         selectedBubble={selectedBubble}
         selectedDivider={selectedDivider}
         selectedInlineImage={selectedInlineImage}
+        selectedHtmlCard={selectedHtmlCard}
+        selectedSticker={selectedSticker}
+        currentPageAppearance={currentPageAppearance}
+        currentPageMeta={currentPageMeta}
         textSelection={textSelection}
         members={documentState.members}
         customPresets={customPresets}
@@ -1506,15 +1887,25 @@ export default function App() {
         onAddInlineImage={addInlineImage}
         onPatchInlineImage={(patch, transient) => selectedInlineImage && patchInlineImage(selectedInlineImage.id, patch, transient)}
         onDeleteInlineImage={() => deleteInlineImage()}
+        onAddHtmlCard={addHtmlCard}
+        onPatchHtmlCard={(patch, transient) => selectedHtmlCard && patchHtmlCard(selectedHtmlCard.id, patch, transient)}
+        onDeleteHtmlCard={() => deleteHtmlCard()}
+        onAddSticker={addSticker}
+        onUploadStickerAsset={uploadStickerAsset}
+        onDeleteStickerAsset={deleteStickerAsset}
+        onPatchSticker={(patch, transient) => selectedSticker && patchSticker(selectedSticker.id, patch, transient)}
+        onDeleteSticker={() => deleteSticker()}
         onAddMember={addMember}
         onPatchMember={patchMember}
         onSetMemberAvatar={setMemberAvatar}
+        onSetMemberAvatarUrl={setMemberAvatarUrl}
         onDeleteMemberAvatar={deleteMemberAvatar}
         onDeleteMember={deleteMember}
         onAddBubble={addBubble}
         onPatchBubble={(patch) => selectedBubble && patchBubble(selectedBubble.id, patch)}
         onMoveBubble={(direction) => selectedBubble && moveBubble(selectedBubble.id, direction)}
-        onInsertTextAfterBubble={() => selectedBubble && insertTextAfterBubble(selectedBubble.id)}
+        onInsertTextBeforeBubble={() => selectedBubble && insertTextAroundBubble(selectedBubble.id, "before")}
+        onInsertTextAfterBubble={() => selectedBubble && insertTextAroundBubble(selectedBubble.id, "after")}
         onDeleteBubble={() => deleteBubble()}
         onAddDivider={addDivider}
         onPatchDivider={(patch) => selectedDivider && patchDivider(selectedDivider.id, patch)}
@@ -1522,8 +1913,17 @@ export default function App() {
         onPatchFooter={patchFooter}
         onApplyFooterAll={applyFooterAll}
         onDeleteFooter={deleteFooter}
+        onPatchPageAppearance={patchPageAppearance}
+        onPatchPageMeta={patchPageMeta}
+        onFitPageHeight={fitHeightToSelectedPage}
         onExport={runExport}
         onCopyPage={copySelectedPage}
+        onSelectAllPages={() => {
+          const allPages = Array.from({ length: pages.length }, (_, index) => index + 1)
+          if (documentState.options.coverMode !== "none") allPages.unshift(0)
+          setSelectedPages(allPages)
+        }}
+        onSelectCurrentPage={() => setSelectedPages([selectedPage])}
         onSaveTemporary={saveTemporary}
         onDownloadProject={() => downloadBookFile(documentState)}
         onImportProject={importProject}
@@ -1591,6 +1991,8 @@ export default function App() {
             selectedBubbleId={selectedBubbleId}
             selectedDividerId={selectedDividerId}
             selectedInlineImageId={selectedInlineImageId}
+            selectedHtmlCardId={selectedHtmlCardId}
+            selectedStickerId={selectedStickerId}
             pendingCaret={pendingCaret}
             transformMode={transformMode}
             onSelectPage={selectPage}
@@ -1599,6 +2001,8 @@ export default function App() {
               setSelectedBubbleId("")
               setSelectedDividerId("")
               setSelectedInlineImageId("")
+              setSelectedHtmlCardId("")
+              setSelectedStickerId("")
               setActiveTab("image")
             }}
             onSelectBubble={(id) => {
@@ -1606,6 +2010,8 @@ export default function App() {
               setSelectedDividerId("")
               setSelectedImageId("")
               setSelectedInlineImageId("")
+              setSelectedHtmlCardId("")
+              setSelectedStickerId("")
               setActiveTab("dialogue")
             }}
             onSelectDivider={(id) => {
@@ -1613,6 +2019,8 @@ export default function App() {
               setSelectedBubbleId("")
               setSelectedImageId("")
               setSelectedInlineImageId("")
+              setSelectedHtmlCardId("")
+              setSelectedStickerId("")
               setActiveTab("manuscript")
             }}
             onSelectInlineImage={(id) => {
@@ -1620,7 +2028,27 @@ export default function App() {
               setSelectedDividerId("")
               setSelectedBubbleId("")
               setSelectedImageId("")
+              setSelectedHtmlCardId("")
+              setSelectedStickerId("")
               setActiveTab("manuscript")
+            }}
+            onSelectHtmlCard={(id) => {
+              setSelectedHtmlCardId(id)
+              setSelectedStickerId("")
+              setSelectedDividerId("")
+              setSelectedBubbleId("")
+              setSelectedImageId("")
+              setSelectedInlineImageId("")
+              setActiveTab("decorate")
+            }}
+            onSelectSticker={(id) => {
+              setSelectedStickerId(id)
+              setSelectedHtmlCardId("")
+              setSelectedDividerId("")
+              setSelectedBubbleId("")
+              setSelectedImageId("")
+              setSelectedInlineImageId("")
+              setActiveTab("decorate")
             }}
             onAddImage={addImage}
             onChangeImage={(id, patch) => patchImage(id, patch, true)}
@@ -1632,6 +2060,10 @@ export default function App() {
             onDeleteDivider={deleteDivider}
             onChangeInlineImage={(id, patch) => patchInlineImage(id, patch, true)}
             onDeleteInlineImage={deleteInlineImage}
+            onChangeHtmlCard={(id, patch) => patchHtmlCard(id, patch, true)}
+            onDeleteHtmlCard={deleteHtmlCard}
+            onChangeSticker={(id, patch) => patchSticker(id, patch, true)}
+            onDeleteSticker={deleteSticker}
             onChangePageText={replacePageText}
             onCaretRestored={clearPendingCaret}
             onSelectText={setTextSelection}
