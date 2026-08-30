@@ -94,6 +94,7 @@ type Props = {
   onPatchOptions: (patch: Partial<BookOptions>, transient?: boolean) => void
   onApplyTheme: (theme: ThemePreset) => void
   onSavePreset: (name: string) => void
+  onOverwritePreset: (id: string, name: string) => void
   onDeletePreset: (id: string) => void
   onAddMark: (start: number, end: number, kind: MarkKind, value: string) => void
   onSetMark: (start: number, end: number, kind: MarkKind, value: string, transient?: boolean) => void
@@ -767,6 +768,10 @@ function ManuscriptPanel(props: Props) {
 
 function ThemePanel(props: Props) {
   const [presetName, setPresetName] = useState("")
+  const selectedCustom = props.customPresets.find((preset) => preset.id === props.document.options.themeId) ?? null
+  useEffect(() => {
+    setPresetName(selectedCustom?.name ?? "")
+  }, [selectedCustom?.id, selectedCustom?.name])
   return (
     <>
       <PanelHeader
@@ -786,50 +791,49 @@ function ThemePanel(props: Props) {
       <div className="panel-scroll">
         <div className="theme-list">
           {[...THEMES, ...props.customPresets].map((theme) => (
-            <button
+            <div
               className={props.document.options.themeId === theme.id ? "theme-row is-active" : "theme-row"}
-              type="button"
               key={theme.id}
-              onClick={() => props.onApplyTheme(theme)}
             >
-              <span className="theme-colors">
-                {theme.colors.map((color) => <i key={color} style={{ background: color }} />)}
-              </span>
-              <span>
-                <strong>{theme.name}</strong>
-                <small>{theme.description}</small>
-              </span>
-              {theme.id.startsWith("custom-") ? (
-                <span
-                  className="theme-delete"
-                  role="button"
-                  tabIndex={0}
-                  title="저장 테마 삭제"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    props.onDeletePreset(theme.id)
-                  }}
-                >
-                  <X aria-hidden="true" />
+              <button className="theme-apply" type="button" onClick={() => props.onApplyTheme(theme)}>
+                <span className="theme-colors">
+                  {theme.colors.map((color) => <i key={color} style={{ background: color }} />)}
                 </span>
-              ) : props.document.options.themeId === theme.id ? <Check aria-hidden="true" /> : null}
-            </button>
+                <span>
+                  <strong>{theme.name}</strong>
+                  <small>{theme.description}</small>
+                </span>
+              </button>
+              {props.document.options.themeId === theme.id ? <Check className="theme-check" aria-hidden="true" /> : null}
+            </div>
           ))}
         </div>
-        <Section title="현재 설정을 테마로 저장">
+        <Section title={selectedCustom ? "선택한 사용자 테마 관리" : "현재 설정을 테마로 저장"}>
+          <p className="section-note">기본 지면·폰트와 멤버 프로필, 아바타, 말풍선·글자·이름색을 저장합니다. 실제 대사와 위치는 책에만 남습니다.</p>
           <Field label="테마 이름">
             <input value={presetName} onChange={(event) => setPresetName(event.target.value)} placeholder="예: 겨울 편지" />
           </Field>
-          <button
-            className="primary-button"
-            type="button"
-            onClick={() => {
-              props.onSavePreset(presetName)
-              setPresetName("")
-            }}
-          >
-            <Save aria-hidden="true" /> 저장
-          </button>
+          {selectedCustom ? (
+            <>
+              <div className="preset-member-summary">
+                <UserRound aria-hidden="true" />
+                <span><strong>{props.document.members.length}명</strong><small>현재 책의 말풍선 멤버가 함께 저장됩니다.</small></span>
+              </div>
+              <button className="primary-button" type="button" onClick={() => props.onOverwritePreset(selectedCustom.id, presetName)}>
+                <Save aria-hidden="true" /> 현재 설정으로 덮어쓰기
+              </button>
+              <button className="secondary-button" type="button" onClick={() => props.onSavePreset(presetName)}>
+                <Plus aria-hidden="true" /> 새 테마로 따로 저장
+              </button>
+              <button className="danger-button" type="button" onClick={() => props.onDeletePreset(selectedCustom.id)}>
+                <Trash2 aria-hidden="true" /> 이 사용자 테마 삭제
+              </button>
+            </>
+          ) : (
+            <button className="primary-button" type="button" onClick={() => props.onSavePreset(presetName)}>
+              <Save aria-hidden="true" /> 새 테마 저장
+            </button>
+          )}
         </Section>
       </div>
     </>

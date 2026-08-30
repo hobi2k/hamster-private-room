@@ -265,6 +265,7 @@ export type ThemePreset = {
   description: string
   colors: [string, string, string]
   options: Partial<BookOptions>
+  members?: MemberProfile[]
 }
 
 export type PageSlice = {

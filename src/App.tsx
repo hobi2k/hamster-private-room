@@ -26,6 +26,7 @@ import { flowInsertionAnchor, flowInsertionPage, PAGE_BREAK, paginateText } from
 import { estimateSpeechBubbleHeight, moveSpeechBubble, pageForAnchor, pageForBlock } from "./lib/speech"
 import { consumeSmartSyntax } from "./lib/smart"
 import { applyAlignmentMark, applyFontMark, applyRangeMark, clearInlineMarksInRange, paragraphSelectionRange } from "./lib/text"
+import { applyThemeSnapshot, createThemeSnapshot } from "./lib/themePreset"
 import type {
   BookDocument,
   BookOptions,
@@ -1611,27 +1612,51 @@ export default function App() {
   }
 
   const applyTheme = (theme: ThemePreset) => {
-    commit((current) => ({
-      ...current,
-      options: { ...current.options, ...theme.options, themeId: theme.id },
-    }))
-    notify(`'${theme.name}' 이불을 덮었어요.`, "success")
+    commit((current) => applyThemeSnapshot(current, theme))
+    notify(
+      theme.members?.length
+        ? `'${theme.name}' 이불과 말풍선 멤버 ${theme.members.length}명을 불러왔어요.`
+        : `'${theme.name}' 이불을 덮었어요.`,
+      "success",
+    )
   }
 
   const savePreset = (name: string) => {
-    if (!name.trim()) {
+    const trimmed = name.trim()
+    if (!trimmed) {
       notify("저장할 테마 이름을 입력해 주세요.", "warn")
       return
     }
-    const preset: ThemePreset = {
-      id: `custom-${crypto.randomUUID()}`,
-      name: name.trim(),
-      description: "내가 저장한 지면 설정",
-      colors: [documentState.options.backgroundColor, documentState.options.quoteColor, documentState.options.bracketColor],
-      options: { ...documentState.options, coverImage: "" },
+    if (customPresets.some((preset) => preset.name.trim().toLocaleLowerCase("ko") === trimmed.toLocaleLowerCase("ko"))) {
+      notify("같은 이름의 테마가 있어요. 해당 테마를 선택한 뒤 덮어쓰기를 사용해 주세요.", "warn")
+      return
     }
+    const preset = createThemeSnapshot(documentState, `custom-${crypto.randomUUID()}`, trimmed)
     setCustomPresets((current) => [...current, preset])
-    notify("현재 설정을 이불로 저장했어요.", "success")
+    notify(`현재 설정과 말풍선 멤버 ${preset.members?.length ?? 0}명을 테마로 저장했어요.`, "success")
+  }
+
+  const overwritePreset = (id: string, name: string) => {
+    const existing = customPresets.find((preset) => preset.id === id)
+    if (!existing) return
+    const trimmed = name.trim() || existing.name
+    if (customPresets.some((preset) => preset.id !== id && preset.name.trim().toLocaleLowerCase("ko") === trimmed.toLocaleLowerCase("ko"))) {
+      notify("같은 이름의 다른 테마가 있어요.", "warn")
+      return
+    }
+    const preset = createThemeSnapshot(documentState, id, trimmed)
+    setCustomPresets((current) => current.map((item) => item.id === id ? preset : item))
+    notify(`'${trimmed}' 테마를 현재 설정으로 덮어썼어요.`, "success")
+  }
+
+  const deletePreset = (id: string) => {
+    const preset = customPresets.find((item) => item.id === id)
+    if (!preset || !window.confirm(`'${preset.name}' 테마를 삭제할까요?`)) return
+    setCustomPresets((current) => current.filter((item) => item.id !== id))
+    if (documentRef.current.options.themeId === id) {
+      commit((current) => ({ ...current, options: { ...current.options, themeId: "custom" } }))
+    }
+    notify(`'${preset.name}' 테마를 삭제했어요.`)
   }
 
   const uploadCover = async (file: File) => {
@@ -1899,7 +1924,8 @@ export default function App() {
         onPatchOptions={patchOptions}
         onApplyTheme={applyTheme}
         onSavePreset={savePreset}
-        onDeletePreset={(id) => setCustomPresets((current) => current.filter((preset) => preset.id !== id))}
+        onOverwritePreset={overwritePreset}
+        onDeletePreset={deletePreset}
         onAddMark={addMark}
         onSetMark={setMark}
         onSetAlign={setSelectionAlign}
