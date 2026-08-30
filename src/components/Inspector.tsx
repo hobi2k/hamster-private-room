@@ -14,10 +14,13 @@ import {
   Download,
   FileDown,
   FileUp,
+  Film,
   Highlighter,
   ImagePlus,
   Italic,
   MessageCircleMore,
+  Palette,
+  Pin,
   Plus,
   RotateCcw,
   Save,
@@ -34,6 +37,15 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, CSSProperties, PointerEvent, ReactNode } from "react"
 import { DEFAULT_OPTIONS, THEMES } from "../data/themes"
 import { avatarFrame, avatarStyle, clampAvatarCenter } from "../lib/avatar"
+import {
+  COLOR_MEMORY_EVENT,
+  EMPTY_COLOR_MEMORY,
+  readColorMemory,
+  RECOMMENDED_COLORS,
+  rememberColor,
+  togglePinnedColor,
+  writeColorMemory,
+} from "../lib/colorMemory"
 import { resolveFlowTextSelection } from "../lib/domText"
 import { fitImageToPage } from "../lib/image"
 import { sanitizeHtml } from "../lib/html"
@@ -124,6 +136,7 @@ type Props = {
   onPatchPageMeta: (patch: Partial<PageMeta>, scope: "selected" | "all") => void
   onFitPageHeight: () => void
   onExport: (mode: ExportMode) => void
+  onExportGif: () => void
   onCopyPage: () => void
   onSelectAllPages: () => void
   onSelectCurrentPage: () => void
@@ -231,18 +244,92 @@ function RangeField({
 }
 
 function ColorInput({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+  const [open, setOpen] = useState(false)
+  const [memory, setMemory] = useState(EMPTY_COLOR_MEMORY)
+
+  useEffect(() => {
+    const sync = () => setMemory(readColorMemory())
+    sync()
+    window.addEventListener(COLOR_MEMORY_EVENT, sync)
+    return () => window.removeEventListener(COLOR_MEMORY_EVENT, sync)
+  }, [])
+
+  const saveMemory = (next: typeof memory) => {
+    setMemory(writeColorMemory(next))
+    window.dispatchEvent(new Event(COLOR_MEMORY_EVENT))
+  }
+  const choose = (color: string) => {
+    onChange(color)
+    saveMemory(rememberColor(memory, color))
+  }
+  const pinned = memory.pinned.includes(value.toLowerCase())
+
   return (
-    <label className="color-input" title={label}>
-      <input
-        type="color"
-        value={value}
-        // Only commit on change (picker close); binding onInput too fired a
-        // duplicate history entry for every event.
-        onChange={(event) => onChange(event.currentTarget.value)}
-      />
-      <span style={{ background: value }} />
-      <small>{label}</small>
-    </label>
+    <div className={`color-control${open ? " is-open" : ""}`}>
+      <label className="color-input" title={label}>
+        <input
+          type="color"
+          value={value}
+          // Only commit on change (picker close); binding onInput too fired a
+          // duplicate history entry for every event.
+          onChange={(event) => choose(event.currentTarget.value)}
+        />
+        <span style={{ background: value }} />
+        <small>{label}</small>
+      </label>
+      <button
+        className="color-memory-toggle"
+        type="button"
+        aria-expanded={open}
+        title={`${label} 색 보관함`}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Palette aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="color-memory-popover">
+          <header>
+            <span><strong>색 보관함</strong><small>최근 색은 자동 저장돼요</small></span>
+            <button
+              className={pinned ? "is-pinned" : ""}
+              type="button"
+              onClick={() => saveMemory(togglePinnedColor(memory, value))}
+              title={pinned ? "현재 색 고정 해제" : "현재 색 고정"}
+            >
+              <Pin aria-hidden="true" /> {pinned ? "고정됨" : "현재 색 고정"}
+            </button>
+          </header>
+          {memory.pinned.length ? (
+            <div className="color-memory-group">
+              <small>고정</small>
+              <div className="color-swatch-row">
+                {memory.pinned.map((color) => (
+                  <button key={color} type="button" className={color === value.toLowerCase() ? "is-current" : ""} style={{ background: color }} onClick={() => choose(color)} title={`고정 색 ${color}`} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className="color-memory-group">
+            <small>추천</small>
+            <div className="color-swatch-row">
+              {RECOMMENDED_COLORS.map((color) => (
+                <button key={color} type="button" style={{ background: color }} onClick={() => choose(color)} title={`추천 색 ${color}`} />
+              ))}
+            </div>
+          </div>
+          {memory.recent.length ? (
+            <div className="color-memory-group">
+              <small>최근</small>
+              <div className="color-swatch-row">
+                {memory.recent.map((color) => (
+                  <button key={color} type="button" style={{ background: color }} onClick={() => choose(color)} title={`최근 색 ${color}`} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -1159,6 +1246,11 @@ function DecoratePanel(props: Props) {
               </div>
               <RangeField label="틀 너비" min={30} max={100} value={props.selectedHtmlCard.width} suffix="%" onChange={(width) => props.onPatchHtmlCard({ width })} />
               <RangeField label="카드 크기" min={50} max={180} value={props.selectedHtmlCard.scale} suffix="%" onChange={(scale) => props.onPatchHtmlCard({ scale })} />
+              <label className="toggle-row"><input type="checkbox" checked={props.selectedHtmlCard.height === undefined} onChange={(event) => props.onPatchHtmlCard({ height: event.target.checked ? undefined : 220 })} /><span>내용 높이에 자동 맞춤</span></label>
+              {props.selectedHtmlCard.height !== undefined ? <RangeField label="틀 높이" min={80} max={700} value={props.selectedHtmlCard.height} suffix="px" onChange={(height) => props.onPatchHtmlCard({ height })} /> : null}
+              <RangeField label="가로 위치" min={-40} max={40} value={props.selectedHtmlCard.offsetX ?? 0} suffix="%" onChange={(offsetX) => props.onPatchHtmlCard({ offsetX })} />
+              <RangeField label="세로 위치" min={-100} max={100} value={props.selectedHtmlCard.offsetY ?? 0} suffix="px" onChange={(offsetY) => props.onPatchHtmlCard({ offsetY })} />
+              <button className="secondary-button" type="button" onClick={() => props.onPatchHtmlCard({ offsetX: 0, offsetY: 0, scale: 100 })}><RotateCcw aria-hidden="true" /> 위치·크기 초기화</button>
               <button className="danger-button" type="button" onClick={props.onDeleteHtmlCard}><Trash2 aria-hidden="true" /> HTML 카드 삭제</button>
             </div>
           ) : null}
@@ -1436,6 +1528,10 @@ function ExportPanel(props: Props) {
             <BookSpreadIcon />
             <span><strong>양면 펼침</strong><small>표지+1쪽부터 묶어 다운로드 폴더에 저장</small></span>
           </button>
+          <button className="export-choice is-animated" type="button" onClick={props.onExportGif}>
+            <Film aria-hidden="true" />
+            <span><strong>움직이는 GIF로 저장</strong><small>현재 쪽의 GIF 스티커·사진 움직임을 보존</small></span>
+          </button>
         </Section>
         <Section title="작업 파일" open={false}>
           <button className="primary-button" type="button" onClick={props.onSaveTemporary}>
@@ -1485,7 +1581,7 @@ export function Inspector(props: Props) {
       <button className="inspector-close icon-button" type="button" onClick={props.onClose} title="설정 닫기">
         <X aria-hidden="true" />
       </button>
-      {content}
+      <div className="inspector-stage" key={props.activeTab}>{content}</div>
     </aside>
   )
 }

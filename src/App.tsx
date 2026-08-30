@@ -6,10 +6,12 @@ import { HomeScreen } from "./components/HomeScreen"
 import { Inspector } from "./components/Inspector"
 import { ToolRail } from "./components/ToolRail"
 import { DEFAULT_OPTIONS } from "./data/themes"
+import { exportSelectedPageGif } from "./lib/animatedGif"
 import { copyBookPage, downloadExportFiles, exportBook } from "./lib/export"
 import { sanitizeHtml } from "./lib/html"
 import { fitImageToPage } from "./lib/image"
 import { defaultPageAppearance, defaultPageMeta } from "./lib/page"
+import { applyMemberPatch } from "./lib/member"
 import {
   ACTIVE_BOOK_KEY,
   bookStorageKey,
@@ -128,7 +130,10 @@ function documentFlowBlocks(
     order: card.order,
     rank: 3,
     minPage: undefined,
-    height: Math.max(90, options.pageWidth * 0.32 * ((card.scale ?? 100) / 100)),
+    height: Math.max(
+      90,
+      ((card.height ?? options.pageWidth * 0.32) + Math.abs(card.offsetY ?? 0)) * ((card.scale ?? 100) / 100),
+    ),
   }))
   return [...speechBlocks, ...dividerBlocks, ...imageBlocks, ...htmlBlocks]
     .sort((left, right) => left.anchor - right.anchor || left.rank - right.rank || left.order - right.order)
@@ -204,7 +209,10 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
     ...card,
     anchor: Math.max(0, Math.min(body.length, Number.isFinite(card.anchor) ? card.anchor : body.length)),
     width: Math.max(30, Math.min(100, Number.isFinite(card.width) ? card.width : 100)),
+    height: Number.isFinite(card.height) ? Math.max(80, Math.min(700, card.height!)) : undefined,
     scale: Math.max(50, Math.min(180, Number.isFinite(card.scale) ? card.scale : 100)),
+    offsetX: Math.max(-40, Math.min(40, Number.isFinite(card.offsetX) ? card.offsetX! : 0)),
+    offsetY: Math.max(-100, Math.min(100, Number.isFinite(card.offsetY) ? card.offsetY! : 0)),
     align: card.align === "left" || card.align === "right" ? card.align : "center" as const,
     order: Number.isFinite(card.order) ? card.order : index + 1,
   })) : []
@@ -1110,7 +1118,10 @@ export default function App() {
         anchor,
         html,
         width: 100,
+        height: undefined,
         scale: 100,
+        offsetX: 0,
+        offsetY: 0,
         align: "center",
         order: Math.max(0, ...current.htmlCards.map((card) => card.order)) + 1,
       }],
@@ -1253,18 +1264,10 @@ export default function App() {
   }
 
   const patchMember = (id: string, patch: Partial<MemberProfile>, transient = false) => {
-    const update = (current: BookDocument) => ({
-      ...current,
-      members: current.members.map((member) => member.id === id ? { ...member, ...patch } : member),
-      speechBubbles: current.speechBubbles.map((bubble) => bubble.profileId === id ? {
-        ...bubble,
-        ...(patch.name !== undefined ? { speakerName: patch.name } : {}),
-        ...(patch.hideName !== undefined ? { showName: !patch.hideName } : {}),
-        ...(patch.nameColor !== undefined ? { nameColor: patch.nameColor } : {}),
-        ...(patch.nameOutline !== undefined ? { nameOutline: patch.nameOutline } : {}),
-        ...(patch.nameOutlineColor !== undefined ? { nameOutlineColor: patch.nameOutlineColor } : {}),
-      } : bubble),
-    })
+    const update = (current: BookDocument) => {
+      const result = applyMemberPatch(current.members, current.speechBubbles, id, patch)
+      return { ...current, members: result.members, speechBubbles: result.bubbles }
+    }
     if (transient) updateTransient(update)
     else commit(update)
   }
@@ -1709,6 +1712,26 @@ export default function App() {
     }
   }
 
+  const runGifExport = async () => {
+    setExporting(true)
+    notify("움직이는 페이지를 GIF로 만들고 있어요.")
+    try {
+      await exportSelectedPageGif(selectedPage, documentState.title, ({ frame, total }) => {
+        if (frame === 1 || frame === total || frame % 8 === 0) notify(`GIF 프레임 만드는 중 · ${frame}/${total}`)
+      })
+      notify("움직이는 GIF 저장을 시작했어요.", "success")
+    } catch (error) {
+      notify(
+        error instanceof Error && error.message === "NO_ANIMATED_GIF"
+          ? "현재 페이지에 움직이는 GIF 스티커나 사진이 없어요."
+          : "GIF를 만들지 못했어요. GIF 파일이나 페이지 크기를 확인해 주세요.",
+        "warn",
+      )
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const copySelectedPage = async () => {
     setExporting(true)
     notify("선택한 페이지를 복사하고 있어요.")
@@ -1847,6 +1870,7 @@ export default function App() {
         active={activeTab}
         canUndo={past.current.length > 0}
         canRedo={future.current.length > 0}
+        onHome={returnHome}
         onSelect={selectTool}
         onUndo={undo}
         onRedo={redo}
@@ -1917,6 +1941,7 @@ export default function App() {
         onPatchPageMeta={patchPageMeta}
         onFitPageHeight={fitHeightToSelectedPage}
         onExport={runExport}
+        onExportGif={runGifExport}
         onCopyPage={copySelectedPage}
         onSelectAllPages={() => {
           const allPages = Array.from({ length: pages.length }, (_, index) => index + 1)

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeftRight, ArrowUp, Check, RotateCw, Trash2 } from "lucide-react"
+import { ArrowDown, ArrowLeftRight, ArrowUp, Check, Move, RotateCw, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ClipboardEvent, CSSProperties, DragEvent, FocusEvent, FormEvent, MouseEvent, PointerEvent, ReactNode, WheelEvent } from "react"
 import { avatarStyle } from "../lib/avatar"
@@ -965,19 +965,62 @@ function FlowInlineImageItem({
 
 function FlowHtmlCardItem({
   card,
+  pageWidth,
   selected,
   onSelect,
+  onChange,
   onDelete,
+  onInteractionStart,
+  onInteractionEnd,
 }: {
   card: HtmlCardBlock
+  pageWidth: number
   selected: boolean
   onSelect: () => void
+  onChange: (patch: Partial<HtmlCardBlock>) => void
   onDelete: () => void
+  onInteractionStart: () => void
+  onInteractionEnd: () => void
 }) {
+  const drag = useRef<{ startX: number; startY: number; offsetX: number; offsetY: number; scale: number } | null>(null)
+  const startMove = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const page = event.currentTarget.closest<HTMLElement>("[data-book-page]")?.getBoundingClientRect()
+    if (!page) return
+    drag.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: card.offsetX ?? 0,
+      offsetY: card.offsetY ?? 0,
+      scale: pageWidth / Math.max(1, page.width),
+    }
+    onInteractionStart()
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const move = (event: PointerEvent<HTMLButtonElement>) => {
+    if (!drag.current) return
+    onChange({
+      offsetX: Math.max(-40, Math.min(40, drag.current.offsetX + ((event.clientX - drag.current.startX) / Math.max(1, pageWidth / drag.current.scale)) * 100)),
+      offsetY: Math.max(-100, Math.min(100, drag.current.offsetY + (event.clientY - drag.current.startY) * drag.current.scale)),
+    })
+  }
+  const endMove = (event: PointerEvent<HTMLButtonElement>) => {
+    if (!drag.current) return
+    drag.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    onInteractionEnd()
+  }
   return (
     <div
       className={`flow-html-card align-${card.align}${selected ? " is-selected" : ""}`}
-      style={{ width: `${card.width}%`, "--html-card-scale": String(card.scale / 100) } as CSSProperties}
+      style={{
+        width: `${card.width}%`,
+        left: `${card.offsetX ?? 0}%`,
+        top: `${card.offsetY ?? 0}px`,
+        marginBottom: `${Math.abs(card.offsetY ?? 0)}px`,
+        "--html-card-scale": String(card.scale / 100),
+      } as CSSProperties}
       contentEditable={false}
       data-flow-html-card={card.id}
       onPointerDown={(event) => {
@@ -987,11 +1030,24 @@ function FlowHtmlCardItem({
         onSelect()
       }}
     >
-      <div className="html-card-content" dangerouslySetInnerHTML={{ __html: card.html }} />
+      <div className="html-card-content" style={{ height: card.height === undefined ? undefined : `${card.height}px` }} dangerouslySetInnerHTML={{ __html: card.html }} />
       {selected ? (
-        <button className="html-card-delete" type="button" onClick={onDelete} title="HTML 카드 삭제">
-          <Trash2 aria-hidden="true" />
-        </button>
+        <>
+          <button
+            className="html-card-move"
+            type="button"
+            onPointerDown={startMove}
+            onPointerMove={move}
+            onPointerUp={endMove}
+            onPointerCancel={endMove}
+            title="HTML 카드 이동"
+          >
+            <Move aria-hidden="true" />
+          </button>
+          <button className="html-card-delete" type="button" onClick={onDelete} title="HTML 카드 삭제">
+            <Trash2 aria-hidden="true" />
+          </button>
+        </>
       ) : null}
     </div>
   )
@@ -1109,6 +1165,7 @@ function PageFlowEditor({
   onDeleteDivider,
   onChangeInlineImage,
   onDeleteInlineImage,
+  onChangeHtmlCard,
   onDeleteHtmlCard,
   onChangePageText,
   onCaretRestored,
@@ -1138,6 +1195,7 @@ function PageFlowEditor({
   onDeleteDivider: (id: string) => void
   onChangeInlineImage: (id: string, patch: Partial<InlineImageBlock>) => void
   onDeleteInlineImage: (id: string) => void
+  onChangeHtmlCard: (id: string, patch: Partial<HtmlCardBlock>) => void
   onDeleteHtmlCard: (id: string) => void
   onChangePageText: Props["onChangePageText"]
   onCaretRestored: () => void
@@ -1239,9 +1297,13 @@ function PageFlowEditor({
       <FlowHtmlCardItem
         key={`html-card:${item.id}`}
         card={item.card}
+        pageWidth={document.options.pageWidth}
         selected={item.id === selectedHtmlCardId}
         onSelect={() => onSelectHtmlCard(item.id)}
+        onChange={(patch) => onChangeHtmlCard(item.id, patch)}
         onDelete={() => onDeleteHtmlCard(item.id)}
+        onInteractionStart={onInteractionStart}
+        onInteractionEnd={onInteractionEnd}
       />
     ))
     cursor = anchor
@@ -1644,6 +1706,7 @@ export function BookCanvas(props: Props) {
               onDeleteDivider={props.onDeleteDivider}
               onChangeInlineImage={props.onChangeInlineImage}
               onDeleteInlineImage={props.onDeleteInlineImage}
+              onChangeHtmlCard={props.onChangeHtmlCard}
               onDeleteHtmlCard={props.onDeleteHtmlCard}
               onChangePageText={props.onChangePageText}
               onCaretRestored={props.onCaretRestored}

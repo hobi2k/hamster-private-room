@@ -28,17 +28,18 @@ type Props = {
   active: EditorTab
   canUndo: boolean
   canRedo: boolean
+  onHome: () => void
   onSelect: (tab: EditorTab) => void
   onUndo: () => void
   onRedo: () => void
 }
 
-export function ToolRail({ active, canUndo, canRedo, onSelect, onUndo, onRedo }: Props) {
+export function ToolRail({ active, canUndo, canRedo, onHome, onSelect, onUndo, onRedo }: Props) {
   return (
     <nav className="tool-rail" aria-label="편집 도구" data-preserve-page-selection>
-      <div className="brand-mark" aria-label="햄스터의 집">
+      <button className="brand-mark" type="button" aria-label="서재 홈으로 돌아가기" title="서재 홈으로" onClick={onHome}>
         <span className="burrow-mark"><i /></span>
-      </div>
+      </button>
       <div className="history-tools">
         <button className="icon-button" type="button" onClick={onUndo} disabled={!canUndo} title="실행 취소 (Ctrl+Z)">
           <Undo2 aria-hidden="true" />

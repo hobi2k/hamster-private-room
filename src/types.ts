@@ -113,7 +113,10 @@ export type HtmlCardBlock = {
   anchor: number
   html: string
   width: number
+  height?: number
   scale: number
+  offsetX?: number
+  offsetY?: number
   align: "left" | "center" | "right"
   order: number
 }
