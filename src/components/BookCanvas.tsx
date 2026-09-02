@@ -6,6 +6,7 @@ import { editableElementText, readFlowTextSelection, restoreEditableSelection, s
 import { decoratePage } from "../lib/pagination"
 import { defaultPageAppearance, defaultPageMeta, pageBackground } from "../lib/page"
 import { resolveSpeechBubbleTops, speechBubbleWidth } from "../lib/speech"
+import { clampStickerSize, isAnimatedSticker, stickerBox } from "../lib/sticker"
 import { adjacentDeletionRange, diffRange, segmentOwnsCaret } from "../lib/text"
 import type { BookDocument, DividerBlock, HtmlCardBlock, ImageLayer, InlineImageBlock, MemberProfile, PageSlice, SpeechBubble, StickerLayer, TextSelection } from "../types"
 
@@ -1054,7 +1055,16 @@ function FlowHtmlCardItem({
 }
 
 function StickerVisual({ sticker }: { sticker: StickerLayer }) {
-  if (sticker.kind === "custom" && sticker.src) return <img src={sticker.src} alt={sticker.name} draggable={false} />
+  if (sticker.kind === "custom" && sticker.src) {
+    return (
+      <img
+        src={sticker.src}
+        alt={sticker.name}
+        draggable={false}
+        data-animated={isAnimatedSticker(sticker) ? "true" : undefined}
+      />
+    )
+  }
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const }
   return (
     <svg viewBox="0 0 24 24" aria-label={sticker.name}>
@@ -1106,7 +1116,7 @@ function StickerItem({
         y: Math.max(0, Math.min(100, current.sticker.y + ((event.clientY - current.y) / current.page.height) * 100)),
       })
     } else {
-      onChange({ size: Math.max(24, Math.min(220, current.sticker.size + (event.clientX - current.x))) })
+      onChange({ size: clampStickerSize(current.sticker.size + (event.clientX - current.x)) })
     }
   }
   const end = (event: PointerEvent<HTMLElement>) => {
@@ -1115,15 +1125,17 @@ function StickerItem({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     onInteractionEnd()
   }
+  const box = stickerBox(sticker.size, sticker.aspectRatio)
   return (
     <div
       className={`sticker-item${selected ? " is-selected" : ""}`}
       style={{
         left: `${sticker.x}%`,
         top: `${sticker.y}%`,
-        width: `${sticker.size}px`,
-        height: `${sticker.size}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
         color: sticker.color,
+        opacity: sticker.opacity ?? 1,
         zIndex: sticker.zIndex + 20,
         transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg) scaleX(${sticker.flipped ? -1 : 1})`,
       }}

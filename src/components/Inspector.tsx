@@ -50,6 +50,7 @@ import { resolveFlowTextSelection } from "../lib/domText"
 import { fitImageToPage } from "../lib/image"
 import { sanitizeHtml } from "../lib/html"
 import { pageHeightForPreset } from "../lib/page"
+import { STICKER_MAX_SIZE, STICKER_MIN_SIZE, isAnimatedSticker } from "../lib/sticker"
 import type {
   BookDocument,
   BookOptions,
@@ -1204,7 +1205,7 @@ function DecoratePanel(props: Props) {
       <PanelHeader title={`스티커·HTML 카드 · ${props.selectedPage}쪽`} />
       <div className="panel-scroll">
         <Section title="스티커">
-          <p className="section-note">누르면 현재 페이지 가운데에 붙어요. 페이지에서 끌어 이동하고 손잡이로 크기를 바꿀 수 있습니다.</p>
+          <p className="section-note">누르면 현재 페이지 가운데에 붙어요. 페이지에서 끌어 이동하고 손잡이로 크기를 바꿀 수 있습니다. 움직이는 GIF도 그대로 붙고, 내보내기에서 <strong>움직이는 GIF로 저장</strong>을 고르면 글과 함께 애니메이션이 저장됩니다.</p>
           <div className="sticker-picker-grid">
             {BUILTIN_STICKERS.map((item) => (
               <button type="button" key={item.kind} onClick={() => props.onAddSticker(item.kind)} title={item.label}>
@@ -1212,12 +1213,13 @@ function DecoratePanel(props: Props) {
               </button>
             ))}
           </div>
-          <label className="file-button"><Sparkles aria-hidden="true" /><span>내 PNG·WebP 스티커 올리기</span><input type="file" accept="image/png,image/webp,image/gif" onChange={(event) => event.target.files?.[0] && props.onUploadStickerAsset(event.target.files[0])} /></label>
+          <label className="file-button"><Sparkles aria-hidden="true" /><span>내 PNG·WebP·GIF 스티커 올리기</span><input type="file" accept="image/png,image/webp,image/gif" onChange={(event) => event.target.files?.[0] && props.onUploadStickerAsset(event.target.files[0])} /></label>
           {props.document.stickerAssets.length ? (
             <div className="custom-sticker-list">
               {props.document.stickerAssets.map((asset) => (
-                <div key={asset.id}>
-                  <button type="button" onClick={() => props.onAddSticker("custom", asset.id)}><img src={asset.src} alt={asset.name} /></button>
+                <div key={asset.id} className={asset.animated ? "is-animated" : undefined}>
+                  <button type="button" onClick={() => props.onAddSticker("custom", asset.id)} title={asset.animated ? `${asset.name} · 움직이는 GIF ${asset.frameCount ?? 0}프레임` : asset.name}><img src={asset.src} alt={asset.name} /></button>
+                  {asset.animated ? <span className="asset-animated-badge" title="움직이는 GIF">GIF</span> : null}
                   <button type="button" className="asset-delete" onClick={() => props.onDeleteStickerAsset(asset.id)} title="팔레트에서 삭제"><X aria-hidden="true" /></button>
                 </div>
               ))}
@@ -1225,9 +1227,10 @@ function DecoratePanel(props: Props) {
           ) : null}
           {props.selectedSticker ? (
             <div className="selected-decoration-controls">
-              <strong>선택한 스티커</strong>
+              <strong>선택한 스티커{isAnimatedSticker(props.selectedSticker) ? <span className="animated-tag">움직이는 GIF</span> : null}</strong>
               {props.selectedSticker.kind !== "custom" ? <ColorInput label="색" value={props.selectedSticker.color} onChange={(color) => props.onPatchSticker({ color })} /> : null}
-              <RangeField label="크기" min={24} max={220} value={props.selectedSticker.size} suffix="px" onChange={(size) => props.onPatchSticker({ size })} />
+              <RangeField label="크기" min={STICKER_MIN_SIZE} max={STICKER_MAX_SIZE} value={props.selectedSticker.size} suffix="px" onChange={(size) => props.onPatchSticker({ size })} />
+              <RangeField label="투명도" min={0} max={100} value={Math.round((props.selectedSticker.opacity ?? 1) * 100)} suffix="%" onChange={(opacity) => props.onPatchSticker({ opacity: opacity / 100 })} />
               <RangeField label="회전" min={-180} max={180} value={props.selectedSticker.rotation} suffix="°" onChange={(rotation) => props.onPatchSticker({ rotation })} />
               <label className="toggle-row"><input type="checkbox" checked={props.selectedSticker.flipped} onChange={(event) => props.onPatchSticker({ flipped: event.target.checked })} /><span>좌우 반전</span></label>
               <button className="danger-button" type="button" onClick={props.onDeleteSticker}><Trash2 aria-hidden="true" /> 스티커 삭제</button>

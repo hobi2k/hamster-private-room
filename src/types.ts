@@ -131,7 +131,12 @@ export type StickerLayer = {
   name: string
   x: number
   y: number
+  /** Longest edge in px; the short edge follows `aspectRatio`. */
   size: number
+  aspectRatio?: number
+  opacity?: number
+  /** True for multi-frame GIF stickers, which the animated export samples. */
+  animated?: boolean
   rotation: number
   flipped: boolean
   color: string
@@ -142,6 +147,9 @@ export type StickerAsset = {
   id: string
   name: string
   src: string
+  aspectRatio?: number
+  animated?: boolean
+  frameCount?: number
 }
 
 export type PageAppearance = {

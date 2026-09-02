@@ -1,6 +1,7 @@
 import html2canvas from "html2canvas"
 import { decompressFrames, parseGIF, type ParsedFrame } from "gifuct-js"
 import { downloadExportFile, type ExportFile } from "./export"
+import { isGifSource } from "./gif"
 
 export type AnimatedGifProgress = {
   frame: number
@@ -35,10 +36,6 @@ export function gifTimeline(durations: number[], maxDuration = MAX_DURATION) {
 
 function safeTitle(title: string) {
   return title.trim().replace(/[\\/:*?"<>|]/g, "-") || "hamster-book"
-}
-
-function isGifSource(value: string) {
-  return /^data:image\/gif(?:;|,)/i.test(value) || /\.gif(?:$|[?#])/i.test(value)
 }
 
 function imageData(frame: ParsedFrame) {
@@ -125,6 +122,7 @@ export async function renderSelectedPageGif(
   if (!gifIndexes.length) throw new Error("NO_ANIMATED_GIF")
 
   const animations = await Promise.all(gifIndexes.map((item) => decodeAnimation(item.src)))
+  if (!animations.some((animation) => animation.frameUrls.length > 1)) throw new Error("NO_ANIMATED_GIF")
   const timeline = gifTimeline(animations.map((animation) => animation.duration))
   const clone = sourcePage.cloneNode(true) as HTMLElement
   const rect = sourcePage.getBoundingClientRect()

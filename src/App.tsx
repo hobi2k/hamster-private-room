@@ -8,6 +8,7 @@ import { ToolRail } from "./components/ToolRail"
 import { DEFAULT_OPTIONS } from "./data/themes"
 import { exportSelectedPageGif } from "./lib/animatedGif"
 import { copyBookPage, downloadExportFiles, exportBook } from "./lib/export"
+import { formatByteSize, gifAspectRatio, gifSizeVerdict, isAnimatedGifMeta, isGifFile, readGifAsset } from "./lib/gif"
 import { sanitizeHtml } from "./lib/html"
 import { fitImageToPage } from "./lib/image"
 import { defaultPageAppearance, defaultPageMeta } from "./lib/page"
@@ -25,6 +26,7 @@ import {
 import { flowInsertionAnchor, flowInsertionPage, PAGE_BREAK, paginateText } from "./lib/pagination"
 import { estimateSpeechBubbleHeight, moveSpeechBubble, pageForAnchor, pageForBlock } from "./lib/speech"
 import { consumeSmartSyntax } from "./lib/smart"
+import { STICKER_DEFAULT_SIZE, normalizeSticker } from "./lib/sticker"
 import { applyAlignmentMark, applyFontMark, applyRangeMark, clearInlineMarksInRange, paragraphSelectionRange } from "./lib/text"
 import { applyThemeSnapshot, createThemeSnapshot } from "./lib/themePreset"
 import type {
@@ -262,17 +264,7 @@ function normalizeDocument(parsed: Partial<BookDocument>) {
     dividers,
     inlineImages,
     htmlCards,
-    stickers: Array.isArray(parsed.stickers) ? parsed.stickers.map((sticker, index) => ({
-      ...sticker,
-      page: Number.isFinite(sticker.page) ? Math.max(0, sticker.page) : 1,
-      x: Number.isFinite(sticker.x) ? Math.max(0, Math.min(100, sticker.x)) : 50,
-      y: Number.isFinite(sticker.y) ? Math.max(0, Math.min(100, sticker.y)) : 48,
-      size: Number.isFinite(sticker.size) ? Math.max(24, Math.min(220, sticker.size)) : 56,
-      rotation: Number.isFinite(sticker.rotation) ? sticker.rotation : 0,
-      flipped: Boolean(sticker.flipped),
-      color: sticker.color || "#ffd23f",
-      zIndex: Number.isFinite(sticker.zIndex) ? sticker.zIndex : index + 1,
-    })) : [],
+    stickers: Array.isArray(parsed.stickers) ? parsed.stickers.map(normalizeSticker) : [],
     stickerAssets: Array.isArray(parsed.stickerAssets) ? parsed.stickerAssets : [],
     marks,
     footers: Object.fromEntries(Object.entries(parsed.footers ?? {}).map(([page, footer]) => [page, {
@@ -357,6 +349,12 @@ function loadPresets() {
 }
 
 async function imageFileToDataUrl(file: File) {
+  // A GIF has to keep its original bytes: the canvas path below rasterizes a
+  // single frame, which silently turns an animated clip into a still image.
+  if (isGifFile(file)) {
+    const { src } = await readGifAsset(file)
+    if (src) return src
+  }
   try {
     const bitmap = await createImageBitmap(file)
     const maxEdge = 1800
@@ -1167,7 +1165,10 @@ export default function App() {
         name: asset?.name ?? kind,
         x: 44,
         y: 44,
-        size: 64,
+        size: STICKER_DEFAULT_SIZE,
+        aspectRatio: asset?.aspectRatio,
+        opacity: 1,
+        animated: Boolean(asset?.animated),
         rotation: 0,
         flipped: false,
         color: "#ffd23f",
@@ -1185,16 +1186,33 @@ export default function App() {
   }
 
   const uploadStickerAsset = async (file: File) => {
-    const src = await imageFileToDataUrl(file)
+    const gif = isGifFile(file)
+    if (gif && gifSizeVerdict(file.size) === "reject") {
+      notify(`GIF가 너무 커요 (${formatByteSize(file.size)}). 12MB 아래로 줄여서 올려 주세요.`, "warn")
+      return
+    }
+    // Read the GIF once for both the source and its frame count so we can tell
+    // the user whether the clip will actually move, and skip a second decode.
+    const asset = gif ? await readGifAsset(file) : null
+    const src = asset?.src || await imageFileToDataUrl(file)
     if (!src) {
       notify("스티커 이미지를 읽지 못했어요.", "warn")
       return
     }
+    const animated = isAnimatedGifMeta(asset?.meta ?? null)
+    const aspectRatio = asset?.meta ? gifAspectRatio(asset.meta) : await imageAspectRatio(src)
     const assetId = crypto.randomUUID()
     const stickerId = crypto.randomUUID()
     commit((current) => ({
       ...current,
-      stickerAssets: [...current.stickerAssets, { id: assetId, name: file.name, src }],
+      stickerAssets: [...current.stickerAssets, {
+        id: assetId,
+        name: file.name,
+        src,
+        aspectRatio,
+        animated,
+        frameCount: asset?.meta?.frameCount,
+      }],
       stickers: [...current.stickers, {
         id: stickerId,
         page: selectedPage,
@@ -1203,7 +1221,10 @@ export default function App() {
         name: file.name,
         x: 44,
         y: 44,
-        size: 64,
+        size: STICKER_DEFAULT_SIZE,
+        aspectRatio,
+        opacity: 1,
+        animated,
         rotation: 0,
         flipped: false,
         color: "#ffd23f",
@@ -1212,7 +1233,19 @@ export default function App() {
     }))
     setSelectedStickerId(stickerId)
     setActiveTab("decorate")
-    notify("내 스티커를 팔레트와 페이지에 추가했어요.", "success")
+    if (animated) {
+      notify(
+        gifSizeVerdict(file.size) === "warn"
+          ? `움직이는 GIF 스티커를 붙였어요. 용량이 커서(${formatByteSize(file.size)}) 작업 파일로도 저장해 주세요.`
+          : `움직이는 GIF 스티커를 붙였어요. ${asset?.meta?.frameCount ?? 0}프레임이 그대로 살아 있어요.`,
+        "success",
+      )
+      return
+    }
+    notify(
+      gif ? "GIF를 붙였지만 프레임이 1장이라 움직이지 않아요." : "내 스티커를 팔레트와 페이지에 추가했어요.",
+      gif ? "warn" : "success",
+    )
   }
 
   const patchSticker = (id: string, patch: Partial<StickerLayer>, transient = false) => {
