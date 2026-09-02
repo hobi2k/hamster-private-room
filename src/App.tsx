@@ -1774,10 +1774,15 @@ export default function App() {
     setExporting(true)
     notify("움직이는 페이지를 GIF로 만들고 있어요.")
     try {
-      await exportSelectedPageGif(selectedPage, documentState.title, ({ frame, total }) => {
-        if (frame === 1 || frame === total || frame % 8 === 0) notify(`GIF 프레임 만드는 중 · ${frame}/${total}`)
+      const result = await exportSelectedPageGif(selectedPage, documentState.title, ({ frame, total }) => {
+        if (frame === 1 || frame === total || frame % 4 === 0) notify(`GIF 프레임 만드는 중 · ${frame}/${total}`)
       })
-      notify("움직이는 GIF 저장을 시작했어요.", "success")
+      notify(
+        result.exact
+          ? `움직이는 GIF 저장을 시작했어요. ${result.frames}프레임 · ${(result.duration / 1000).toFixed(2)}초로 원본 속도 그대로예요.`
+          : `움직이는 GIF 저장을 시작했어요. 프레임이 너무 많아 앞 ${result.frames}프레임까지만 담았어요. 속도는 원본과 같아요.`,
+        result.exact ? "success" : "warn",
+      )
     } catch (error) {
       notify(
         error instanceof Error && error.message === "NO_ANIMATED_GIF"
